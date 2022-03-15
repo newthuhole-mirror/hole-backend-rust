@@ -1,9 +1,13 @@
 import sqlite3
 from datetime import datetime
 
-def mig_post(db_old, db_new):
-    c_old = db_old.cursor()
-    c_new = db_new.cursor()
+db_old = sqlite3.connect('hole.db')
+db_new = sqlite3.connect('hole_v2.db')
+c_old = db_old.cursor()
+c_new = db_new.cursor()
+
+
+def mig_post():
     rs = c_old.execute(
         'SELECT id, name_hash, content, cw, author_title, '
         'likenum, n_comments, timestamp, comment_timestamp, '
@@ -25,13 +29,22 @@ def mig_post(db_old, db_new):
         )
     db_new.commit()
 
-    c_old.close()
-    c_new.close()
+
+def mig_user():
+    rs = c_old.execute('SELECT name, token FROM user')
+
+    for r in rs:
+        c_new.execute(
+            'INSERT OR REPLACE INTO users(name, token) VALUES(?, ?)',
+            r
+        )
+    db_new.commit()
 
 
 if __name__ == '__main__':
-    db_old = sqlite3.connect('hole.db')
-    db_new = sqlite3.connect('hole_v2.db')
+    # mig_post()
+    mig_user()
 
-    mig_post(db_old, db_new)
+c_old.close()
+c_new.close()
 

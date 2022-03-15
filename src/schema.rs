@@ -15,3 +15,17 @@ table! {
         allow_search -> Bool,
     }
 }
+
+table! {
+    users (id) {
+        id -> Integer,
+        name -> Text,
+        token -> Text,
+        is_admin -> Bool,
+    }
+}
+
+allow_tables_to_appear_in_same_query!(
+    posts,
+    users,
+);

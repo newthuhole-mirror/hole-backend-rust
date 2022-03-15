@@ -4,7 +4,7 @@ use chrono::NaiveDateTime;
 use diesel::{insert_into, Connection, ExpressionMethods, QueryDsl, RunQueryDsl, SqliteConnection};
 use std::env;
 
-use crate::schema::posts;
+use crate::schema::*;
 
 type MR<T> = Result<T, diesel::result::Error>;
 
@@ -78,5 +78,19 @@ impl Post {
     pub fn create(conn: &SqliteConnection, new_post: NewPost) -> MR<usize> {
         // TODO: tags
         insert_into(posts::table).values(&new_post).execute(conn)
+    }
+}
+
+#[derive(Queryable, Debug)]
+pub struct User {
+    pub id: i32,
+    pub name: String,
+    pub token: String,
+    pub is_admin: bool,
+}
+
+impl User {
+    pub fn get_by_token(conn: &SqliteConnection, token: &str) -> Option<Self> {
+        users::table.filter(users::token.eq(token)).first(conn).ok()
     }
 }
