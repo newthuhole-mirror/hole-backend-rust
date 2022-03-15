@@ -3,14 +3,11 @@ use crate::random_hasher::RandomHasher;
 use rocket::http::Status;
 use rocket::request::{self, FromRequest, Request};
 use rocket::response::{self, Responder};
-use rocket::serde::json::{json, Value};
+use rocket::serde::json::json;
 
 #[catch(401)]
-pub fn catch_401_error() -> Value {
-    json!({
-        "code": -1,
-        "msg": "未登录或token过期"
-    })
+pub fn catch_401_error() -> &'static str {
+    "未登录或token过期"
 }
 
 pub struct CurrentUser {

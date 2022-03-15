@@ -25,18 +25,19 @@ pub struct PostOutput {
     pid: i32,
     text: String,
     cw: Option<String>,
-    author_title: String,
+    custom_title: Option<String>,
     n_likes: i32,
     n_comments: i32,
     create_time: NaiveDateTime,
     last_comment_time: NaiveDateTime,
     allow_search: bool,
     is_reported: Option<bool>,
-    comments: Vec<CommentOutput>,
+    comments: Option<Vec<CommentOutput>>,
     can_del: bool,
     // for old version frontend
     timestamp: i64,
-    custom_title: Option<String>,
+    likenum: i32,
+    reply: i32,
 }
 
 fn p2output(p: &Post, user: &CurrentUser, conn: &SqliteConnection) -> PostOutput {
@@ -49,31 +50,32 @@ fn p2output(p: &Post, user: &CurrentUser, conn: &SqliteConnection) -> PostOutput
         } else {
             None
         },
-        author_title: p.author_title.to_string(),
         n_likes: p.n_likes,
         n_comments: p.n_comments,
         create_time: p.create_time,
         last_comment_time: p.last_comment_time,
         allow_search: p.allow_search,
+        custom_title: if p.author_title.len() > 0 {
+            Some(p.author_title.to_string())
+        } else {
+            None
+        },
         is_reported: if user.is_admin {
             Some(p.is_reported)
         } else {
             None
         },
         comments: if p.n_comments > 50 {
-            vec![]
+            None
         } else {
             // 单个洞还有查询评论的接口，这里挂了不用报错
-            c2output(p, &p.get_comments(conn).unwrap_or(vec![]), user)
+            Some(c2output(p, &p.get_comments(conn).unwrap_or(vec![]), user))
         },
         can_del: user.is_admin || p.author_hash == user.namehash,
         // for old version frontend
         timestamp: p.create_time.timestamp(),
-        custom_title: if p.author_title.len() > 0 {
-            Some(p.author_title.to_string())
-        } else {
-            None
-        },
+        likenum: p.n_likes,
+        reply: p.n_comments,
     }
 }
 
