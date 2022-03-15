@@ -14,28 +14,46 @@ pub fn catch_401_error() -> Value {
 }
 
 pub struct CurrentUser {
+    id: Option<i32>, // tmp user has no id, only for block
     namehash: String,
     is_admin: bool,
+    custom_title: String,
 }
 
 #[rocket::async_trait]
 impl<'r> FromRequest<'r> for CurrentUser {
     type Error = ();
     async fn from_request(request: &'r Request<'_>) -> request::Outcome<Self, Self::Error> {
+        let rh = request.rocket().state::<RandomHasher>().unwrap();
+        let mut cu: Option<CurrentUser> = None;
+
         if let Some(token) = request.headers().get_one("User-Token") {
-            let conn = establish_connection();
-            if let Some(user) = User::get_by_token(&conn, token) {
-                return request::Outcome::Success(CurrentUser {
-                    namehash: request
-                        .rocket()
-                        .state::<RandomHasher>()
-                        .unwrap()
-                        .hash_with_salt(&user.name),
-                    is_admin: user.is_admin,
+            let sp = token.split('_').collect::<Vec<&str>>();
+            if sp.len() == 2 && sp[0] == rh.get_tmp_token() {
+                let namehash = rh.hash_with_salt(sp[1]);
+                cu = Some(CurrentUser {
+                    id: None,
+                    custom_title: format!("TODO: {}", &namehash),
+                    namehash: namehash,
+                    is_admin: false,
                 });
+            } else {
+                let conn = establish_connection();
+                if let Some(user) = User::get_by_token(&conn, token) {
+                    let namehash = rh.hash_with_salt(&user.name);
+                    cu = Some(CurrentUser {
+                        id: Some(user.id),
+                        custom_title: format!("TODO: {}", &namehash),
+                        namehash: namehash,
+                        is_admin: user.is_admin,
+                    });
+                }
             }
         }
-        request::Outcome::Failure((Status::Unauthorized, ()))
+        match cu {
+            Some(u) => request::Outcome::Success(u),
+            None => request::Outcome::Failure((Status::Unauthorized, ())),
+        }
     }
 }
 
@@ -77,6 +95,13 @@ impl<'r> Responder<'r, 'static> for APIError {
     }
 }
 
+macro_rules! look {
+    ($s:expr) => {
+        format!("{}...{}", &$s[..2], &$s[$s.len() - 2..])
+    };
+}
+
 pub type API<T> = Result<T, APIError>;
 
 pub mod post;
+pub mod systemlog;

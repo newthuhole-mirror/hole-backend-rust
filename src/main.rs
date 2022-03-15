@@ -4,10 +4,10 @@ extern crate rocket;
 #[macro_use]
 extern crate diesel;
 
-mod random_hasher;
-mod models;
-mod schema;
 mod api;
+mod models;
+mod random_hasher;
+mod schema;
 
 use random_hasher::RandomHasher;
 
@@ -15,14 +15,16 @@ use random_hasher::RandomHasher;
 fn rocket() -> _ {
     load_env();
     rocket::build()
-        .mount("/_api", routes![
-            api::post::get_list,
-            api::post::get_one, 
-            api::post::publish_post
-        ])
-        .register("/_api", catchers![
-            api::catch_401_error
-        ])
+        .mount(
+            "/_api/v1",
+            routes![
+                api::post::get_list,
+                api::post::get_one,
+                api::post::publish_post,
+                api::systemlog::get_systemlog,
+            ],
+        )
+        .register("/_api", catchers![api::catch_401_error])
         .manage(RandomHasher::get_random_one())
 }
 

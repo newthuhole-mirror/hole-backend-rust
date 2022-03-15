@@ -12,3 +12,4 @@ diesel = { version = "1.4.8", features= ["sqlite", "chrono"] }
 chrono = { version="0.4", features=["serde"] }
 rand = "0.8.5"
 dotenv = "0.15.0"
+sha2 = "0.10.2"
