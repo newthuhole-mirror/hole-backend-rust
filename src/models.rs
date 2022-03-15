@@ -40,6 +40,7 @@ pub struct NewPost<'a> {
     pub cw: &'a str,
     pub author_hash: &'a str,
     pub author_title: &'a str,
+    pub allow_search: bool,
     // TODO: tags
 }
 
@@ -75,6 +76,12 @@ impl Post {
             .load(conn)
     }
 
+    pub fn get_comments(&self, conn: &SqliteConnection) -> MR<Vec<Comment>> {
+        comments::table
+            .filter(comments::post_id.eq(self.id))
+            .load(conn)
+    }
+
     pub fn create(conn: &SqliteConnection, new_post: NewPost) -> MR<usize> {
         // TODO: tags
         insert_into(posts::table).values(&new_post).execute(conn)
@@ -94,3 +101,16 @@ impl User {
         users::table.filter(users::token.eq(token)).first(conn).ok()
     }
 }
+
+#[derive(Queryable, Debug)]
+pub struct Comment {
+    pub id: i32,
+    pub author_hash: String,
+    pub author_title: String,
+    pub content: String,
+    pub create_time: NaiveDateTime,
+    pub is_deleted: bool,
+    pub post_id: i32,
+}
+
+impl Comment {}

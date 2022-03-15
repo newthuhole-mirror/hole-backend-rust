@@ -41,9 +41,27 @@ def mig_user():
     db_new.commit()
 
 
+def mig_comment():
+    rs = c_old.execute(
+        'SELECT id, name_hash, author_title, content, timestamp, deleted, post_id '
+        'FROM comment'
+    )
+    for r in rs:
+        r = list(r)
+        r[2] = r[2] or ''
+        r[4] = datetime.fromtimestamp(r[4])
+        r[5] = r[5] or False
+        c_new.execute(
+            'INSERT OR REPLACE INTO comments VALUES({})'.format(','.join(['?'] * 7)),
+            r
+        )
+    db_new.commit()
+
+
 if __name__ == '__main__':
     # mig_post()
-    mig_user()
+    # mig_user()
+    mig_comment()
 
 c_old.close()
 c_new.close()

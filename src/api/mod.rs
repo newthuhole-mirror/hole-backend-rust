@@ -103,5 +103,6 @@ macro_rules! look {
 
 pub type API<T> = Result<T, APIError>;
 
+pub mod comment;
 pub mod post;
 pub mod systemlog;

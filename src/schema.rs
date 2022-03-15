@@ -1,4 +1,16 @@
 table! {
+    comments (id) {
+        id -> Integer,
+        author_hash -> Text,
+        author_title -> Text,
+        content -> Text,
+        create_time -> Timestamp,
+        is_deleted -> Bool,
+        post_id -> Integer,
+    }
+}
+
+table! {
     posts (id) {
         id -> Integer,
         author_hash -> Text,
@@ -26,6 +38,7 @@ table! {
 }
 
 allow_tables_to_appear_in_same_query!(
+    comments,
     posts,
     users,
 );

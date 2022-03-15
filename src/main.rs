@@ -18,6 +18,7 @@ fn rocket() -> _ {
         .mount(
             "/_api/v1",
             routes![
+                api::comment::get_comment,
                 api::post::get_list,
                 api::post::get_one,
                 api::post::publish_post,
