@@ -1,20 +1,16 @@
 #![allow(clippy::all)]
 
 use chrono::NaiveDateTime;
-use diesel::{insert_into, Connection, ExpressionMethods, QueryDsl, RunQueryDsl, SqliteConnection};
-use std::env;
+use diesel::{insert_into, ExpressionMethods, QueryDsl, RunQueryDsl};
 
 use crate::schema::*;
+use crate::db_conn::Conn;
+
 
 type MR<T> = Result<T, diesel::result::Error>;
 
 no_arg_sql_function!(RANDOM, (), "Represents the sql RANDOM() function");
 
-pub fn establish_connection() -> SqliteConnection {
-    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
-    SqliteConnection::establish(&database_url)
-        .expect(&format!("Error connecting to {}", database_url))
-}
 
 #[derive(Queryable, Debug)]
 pub struct Post {
@@ -45,12 +41,12 @@ pub struct NewPost<'a> {
 }
 
 impl Post {
-    pub fn get(conn: &SqliteConnection, id: i32) -> MR<Self> {
+    pub fn get(conn: &Conn, id: i32) -> MR<Self> {
         posts::table.find(id).first(conn)
     }
 
     pub fn gets_by_page(
-        conn: &SqliteConnection,
+        conn: &Conn,
         order_mode: u8,
         page: u32,
         page_size: u32,
@@ -76,13 +72,13 @@ impl Post {
             .load(conn)
     }
 
-    pub fn get_comments(&self, conn: &SqliteConnection) -> MR<Vec<Comment>> {
+    pub fn get_comments(&self, conn: &Conn) -> MR<Vec<Comment>> {
         comments::table
             .filter(comments::post_id.eq(self.id))
             .load(conn)
     }
 
-    pub fn create(conn: &SqliteConnection, new_post: NewPost) -> MR<usize> {
+    pub fn create(conn: &Conn, new_post: NewPost) -> MR<usize> {
         // TODO: tags
         insert_into(posts::table).values(&new_post).execute(conn)
     }
@@ -97,7 +93,7 @@ pub struct User {
 }
 
 impl User {
-    pub fn get_by_token(conn: &SqliteConnection, token: &str) -> Option<Self> {
+    pub fn get_by_token(conn: &Conn, token: &str) -> Option<Self> {
         users::table.filter(users::token.eq(token)).first(conn).ok()
     }
 }

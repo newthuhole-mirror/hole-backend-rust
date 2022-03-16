@@ -5,6 +5,7 @@ use rocket::serde::{
     json::{json, Value},
     Serialize,
 };
+use crate::db_conn::DbConn;
 use std::collections::HashMap;
 
 #[derive(Serialize)]
@@ -48,8 +49,7 @@ pub fn c2output(p: &Post, cs: &Vec<Comment>, user: &CurrentUser) -> Vec<CommentO
 }
 
 #[get("/getcomment?<pid>")]
-pub fn get_comment(pid: i32, user: CurrentUser) -> API<Value> {
-    let conn = establish_connection();
+pub fn get_comment(pid: i32, user: CurrentUser, conn: DbConn) -> API<Value> {
     let p = Post::get(&conn, pid).map_err(APIError::from_db)?;
     if p.is_deleted {
         return Err(APIError::PcError(IsDeleted));

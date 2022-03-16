@@ -4,12 +4,16 @@ extern crate rocket;
 #[macro_use]
 extern crate diesel;
 
+
 mod api;
 mod models;
 mod random_hasher;
 mod schema;
+mod db_conn;
+
 
 use random_hasher::RandomHasher;
+use db_conn::init_pool;
 
 #[launch]
 fn rocket() -> _ {
@@ -27,6 +31,7 @@ fn rocket() -> _ {
         )
         .register("/_api", catchers![api::catch_401_error])
         .manage(RandomHasher::get_random_one())
+        .manage(init_pool())
 }
 
 fn load_env() {

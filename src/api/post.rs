@@ -2,12 +2,12 @@ use crate::api::comment::{c2output, CommentOutput};
 use crate::api::{APIError, CurrentUser, PolicyError::*, API};
 use crate::models::*;
 use chrono::NaiveDateTime;
-use diesel::SqliteConnection;
 use rocket::form::Form;
 use rocket::serde::{
     json::{json, Value},
     Serialize,
 };
+use crate::db_conn::DbConn;
 
 #[derive(FromForm)]
 pub struct PostInput<'r> {
@@ -40,7 +40,7 @@ pub struct PostOutput {
     reply: i32,
 }
 
-fn p2output(p: &Post, user: &CurrentUser, conn: &SqliteConnection) -> PostOutput {
+fn p2output(p: &Post, user: &CurrentUser, conn: &DbConn) -> PostOutput {
     PostOutput {
         pid: p.id,
         text: p.content.to_string(),
@@ -80,8 +80,7 @@ fn p2output(p: &Post, user: &CurrentUser, conn: &SqliteConnection) -> PostOutput
 }
 
 #[get("/getone?<pid>")]
-pub fn get_one(pid: i32, user: CurrentUser) -> API<Value> {
-    let conn = establish_connection();
+pub fn get_one(pid: i32, user: CurrentUser, conn: DbConn) -> API<Value> {
     let p = Post::get(&conn, pid).map_err(APIError::from_db)?;
     if !user.is_admin {
         if p.is_reported {
@@ -98,9 +97,8 @@ pub fn get_one(pid: i32, user: CurrentUser) -> API<Value> {
 }
 
 #[get("/getlist?<p>&<order_mode>")]
-pub fn get_list(p: Option<u32>, order_mode: u8, user: CurrentUser) -> API<Value> {
+pub fn get_list(p: Option<u32>, order_mode: u8, user: CurrentUser, conn: DbConn) -> API<Value> {
     let page = p.unwrap_or(1);
-    let conn = establish_connection();
     let ps = Post::gets_by_page(&conn, order_mode, page, 25, user.is_admin)
         .map_err(APIError::from_db)?;
     let ps_data = ps
@@ -115,8 +113,7 @@ pub fn get_list(p: Option<u32>, order_mode: u8, user: CurrentUser) -> API<Value>
 }
 
 #[post("/dopost", data = "<poi>")]
-pub fn publish_post(poi: Form<PostInput>, user: CurrentUser) -> API<Value> {
-    let conn = establish_connection();
+pub fn publish_post(poi: Form<PostInput>, user: CurrentUser, conn: DbConn) -> API<Value> {
     dbg!(poi.use_title, poi.allow_search);
     let r = Post::create(
         &conn,

@@ -1,9 +1,10 @@
 use crate::models::*;
 use crate::random_hasher::RandomHasher;
 use rocket::http::Status;
-use rocket::request::{self, FromRequest, Request};
+use rocket::request::{FromRequest, Request, Outcome};
 use rocket::response::{self, Responder};
 use rocket::serde::json::json;
+use crate::db_conn::DbPool;
 
 #[catch(401)]
 pub fn catch_401_error() -> &'static str {
@@ -20,7 +21,7 @@ pub struct CurrentUser {
 #[rocket::async_trait]
 impl<'r> FromRequest<'r> for CurrentUser {
     type Error = ();
-    async fn from_request(request: &'r Request<'_>) -> request::Outcome<Self, Self::Error> {
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let rh = request.rocket().state::<RandomHasher>().unwrap();
         let mut cu: Option<CurrentUser> = None;
 
@@ -35,7 +36,7 @@ impl<'r> FromRequest<'r> for CurrentUser {
                     is_admin: false,
                 });
             } else {
-                let conn = establish_connection();
+                let conn = request.rocket().state::<DbPool>().unwrap().get().unwrap();
                 if let Some(user) = User::get_by_token(&conn, token) {
                     let namehash = rh.hash_with_salt(&user.name);
                     cu = Some(CurrentUser {
@@ -48,8 +49,8 @@ impl<'r> FromRequest<'r> for CurrentUser {
             }
         }
         match cu {
-            Some(u) => request::Outcome::Success(u),
-            None => request::Outcome::Failure((Status::Unauthorized, ())),
+            Some(u) => Outcome::Success(u),
+            None => Outcome::Failure((Status::Unauthorized, ())),
         }
     }
 }
