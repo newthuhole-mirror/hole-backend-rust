@@ -4,16 +4,14 @@ extern crate rocket;
 #[macro_use]
 extern crate diesel;
 
-
 mod api;
+mod db_conn;
 mod models;
 mod random_hasher;
 mod schema;
-mod db_conn;
 
-
-use random_hasher::RandomHasher;
 use db_conn::init_pool;
+use random_hasher::RandomHasher;
 
 #[launch]
 fn rocket() -> _ {
@@ -26,6 +24,7 @@ fn rocket() -> _ {
                 api::post::get_list,
                 api::post::get_one,
                 api::post::publish_post,
+                api::post::edit_cw,
                 api::systemlog::get_systemlog,
             ],
         )

@@ -12,7 +12,7 @@ type MR<T> = Result<T, diesel::result::Error>;
 no_arg_sql_function!(RANDOM, (), "Represents the sql RANDOM() function");
 
 
-#[derive(Queryable, Debug)]
+#[derive(Queryable, Identifiable)]
 pub struct Post {
     pub id: i32,
     pub author_hash: String,
@@ -81,6 +81,10 @@ impl Post {
     pub fn create(conn: &Conn, new_post: NewPost) -> MR<usize> {
         // TODO: tags
         insert_into(posts::table).values(&new_post).execute(conn)
+    }
+
+    pub fn update_cw(&self, conn: &Conn, new_cw: &str) -> MR<usize> {
+        diesel::update(self).set(posts::cw.eq(new_cw)).execute(conn)
     }
 }
 

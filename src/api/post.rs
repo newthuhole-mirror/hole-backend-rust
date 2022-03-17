@@ -1,5 +1,6 @@
 use crate::api::comment::{c2output, CommentOutput};
 use crate::api::{APIError, CurrentUser, PolicyError::*, API};
+use crate::db_conn::DbConn;
 use crate::models::*;
 use chrono::NaiveDateTime;
 use rocket::form::Form;
@@ -7,7 +8,6 @@ use rocket::serde::{
     json::{json, Value},
     Serialize,
 };
-use crate::db_conn::DbConn;
 
 #[derive(FromForm)]
 pub struct PostInput<'r> {
@@ -38,6 +38,13 @@ pub struct PostOutput {
     timestamp: i64,
     likenum: i32,
     reply: i32,
+}
+
+#[derive(FromForm)]
+pub struct CwInput<'r> {
+    pid: i32,
+    #[field(validate = len(0..33))]
+    cw: &'r str,
 }
 
 fn p2output(p: &Post, user: &CurrentUser, conn: &DbConn) -> PostOutput {
@@ -130,4 +137,14 @@ pub fn publish_post(poi: Form<PostInput>, user: CurrentUser, conn: DbConn) -> AP
         "data": r,
         "code": 0
     }))
+}
+
+#[post("/editcw", data = "<cwi>")]
+pub fn edit_cw(cwi: Form<CwInput>, user: CurrentUser, conn: DbConn) -> API<Value> {
+    let p = Post::get(&conn, cwi.pid).map_err(APIError::from_db)?;
+    if !(user.is_admin || p.author_hash == user.namehash) {
+        return Err(APIError::PcError(NotAllowed));
+    }
+    _ = p.update_cw(&conn, cwi.cw);
+    Ok(json!({"code": 0}))
 }
