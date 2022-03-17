@@ -1,10 +1,10 @@
+use crate::db_conn::{Conn, DbPool};
 use crate::models::*;
 use crate::random_hasher::RandomHasher;
 use rocket::http::Status;
-use rocket::request::{FromRequest, Request, Outcome};
+use rocket::request::{FromRequest, Outcome, Request};
 use rocket::response::{self, Responder};
 use rocket::serde::json::json;
-use crate::db_conn::DbPool;
 
 #[catch(401)]
 pub fn catch_401_error() -> &'static str {
@@ -93,6 +93,75 @@ impl<'r> Responder<'r, 'static> for APIError {
     }
 }
 
+pub trait UGC {
+    fn get_author_hash(&self) -> &str;
+    fn get_is_deleted(&self) -> bool;
+    fn get_is_reported(&self) -> bool;
+    fn extra_delete_condition(&self) -> bool;
+    fn do_set_deleted(&self, conn: &Conn) -> API<()>;
+    fn check_permission(&self, user: &CurrentUser, mode: &str) -> API<()> {
+        if user.is_admin {
+            return Ok(());
+        }
+        if mode.contains('r') && self.get_is_deleted() {
+            return Err(APIError::PcError(PolicyError::IsDeleted));
+        }
+        if mode.contains('o') && self.get_is_reported() {
+            return Err(APIError::PcError(PolicyError::IsReported));
+        }
+        if mode.contains('w') && self.get_author_hash() != user.namehash {
+            return Err(APIError::PcError(PolicyError::NotAllowed));
+        }
+        if mode.contains('d') && !self.extra_delete_condition() {
+            return Err(APIError::PcError(PolicyError::NotAllowed));
+        }
+        Ok(())
+    }
+
+    fn soft_delete(&self, user: &CurrentUser, conn: &Conn) -> API<()> {
+        self.check_permission(user, "rwd")?;
+
+        self.do_set_deleted(conn)?;
+        Ok(())
+    }
+}
+
+impl UGC for Post {
+    fn get_author_hash(&self) -> &str {
+        &self.author_hash
+    }
+    fn get_is_reported(&self) -> bool {
+        self.is_reported
+    }
+    fn get_is_deleted(&self) -> bool {
+        self.is_deleted
+    }
+    fn extra_delete_condition(&self) -> bool {
+        self.n_comments == 0
+    }
+    fn do_set_deleted(&self, conn: &Conn) -> API<()> {
+        self.set_deleted(conn).map_err(APIError::from_db)
+    }
+}
+
+impl UGC for Comment {
+    fn get_author_hash(&self) -> &str {
+        &self.author_hash
+    }
+    fn get_is_reported(&self) -> bool {
+        false
+    }
+    fn get_is_deleted(&self) -> bool {
+        self.is_deleted
+    }
+    fn extra_delete_condition(&self) -> bool {
+        true
+    }
+    fn do_set_deleted(&self, conn: &Conn) -> API<()> {
+        self.set_deleted(conn).map_err(APIError::from_db)
+    }
+}
+
 macro_rules! look {
     ($s:expr) => {
         format!("{}...{}", &$s[..2], &$s[$s.len() - 2..])
@@ -102,5 +171,6 @@ macro_rules! look {
 pub type API<T> = Result<T, APIError>;
 
 pub mod comment;
+pub mod operation;
 pub mod post;
 pub mod systemlog;

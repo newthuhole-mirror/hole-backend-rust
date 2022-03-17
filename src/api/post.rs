@@ -1,5 +1,5 @@
 use crate::api::comment::{c2output, CommentOutput};
-use crate::api::{APIError, CurrentUser, PolicyError::*, API};
+use crate::api::{APIError, CurrentUser, PolicyError::*, API, UGC};
 use crate::db_conn::DbConn;
 use crate::models::*;
 use chrono::NaiveDateTime;
@@ -89,14 +89,7 @@ fn p2output(p: &Post, user: &CurrentUser, conn: &DbConn) -> PostOutput {
 #[get("/getone?<pid>")]
 pub fn get_one(pid: i32, user: CurrentUser, conn: DbConn) -> API<Value> {
     let p = Post::get(&conn, pid).map_err(APIError::from_db)?;
-    if !user.is_admin {
-        if p.is_reported {
-            return Err(APIError::PcError(IsReported));
-        }
-        if p.is_deleted {
-            return Err(APIError::PcError(IsDeleted));
-        }
-    }
+    p.check_permission(&user, "ro")?;
     Ok(json!({
         "data": p2output(&p, &user, &conn),
         "code": 0,
@@ -106,8 +99,7 @@ pub fn get_one(pid: i32, user: CurrentUser, conn: DbConn) -> API<Value> {
 #[get("/getlist?<p>&<order_mode>")]
 pub fn get_list(p: Option<u32>, order_mode: u8, user: CurrentUser, conn: DbConn) -> API<Value> {
     let page = p.unwrap_or(1);
-    let ps = Post::gets_by_page(&conn, order_mode, page, 25, user.is_admin)
-        .map_err(APIError::from_db)?;
+    let ps = Post::gets_by_page(&conn, order_mode, page, 25).map_err(APIError::from_db)?;
     let ps_data = ps
         .iter()
         .map(|p| p2output(p, &user, &conn))
@@ -145,6 +137,7 @@ pub fn edit_cw(cwi: Form<CwInput>, user: CurrentUser, conn: DbConn) -> API<Value
     if !(user.is_admin || p.author_hash == user.namehash) {
         return Err(APIError::PcError(NotAllowed));
     }
+    p.check_permission(&user, "w")?;
     _ = p.update_cw(&conn, cwi.cw);
     Ok(json!({"code": 0}))
 }

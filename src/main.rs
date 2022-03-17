@@ -21,11 +21,13 @@ fn rocket() -> _ {
             "/_api/v1",
             routes![
                 api::comment::get_comment,
+                api::comment::add_comment,
                 api::post::get_list,
                 api::post::get_one,
                 api::post::publish_post,
                 api::post::edit_cw,
                 api::systemlog::get_systemlog,
+                api::operation::delete,
             ],
         )
         .register("/_api", catchers![api::catch_401_error])

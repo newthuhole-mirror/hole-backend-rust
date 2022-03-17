@@ -3,14 +3,31 @@
 use chrono::NaiveDateTime;
 use diesel::{insert_into, ExpressionMethods, QueryDsl, RunQueryDsl};
 
-use crate::schema::*;
 use crate::db_conn::Conn;
-
+use crate::schema::*;
 
 type MR<T> = Result<T, diesel::result::Error>;
 
 no_arg_sql_function!(RANDOM, (), "Represents the sql RANDOM() function");
 
+macro_rules! get {
+    ($table:ident) => {
+        pub fn get(conn: &Conn, id: i32) -> MR<Self> {
+            $table::table.find(id).first(conn)
+        }
+    };
+}
+
+macro_rules! set_deleted {
+    ($table:ident) => {
+        pub fn set_deleted(&self, conn: &Conn) -> MR<()> {
+            diesel::update(self)
+                .set($table::is_deleted.eq(true))
+                .execute(conn)?;
+            Ok(())
+        }
+    };
+}
 
 #[derive(Queryable, Identifiable)]
 pub struct Post {
@@ -41,23 +58,15 @@ pub struct NewPost<'a> {
 }
 
 impl Post {
-    pub fn get(conn: &Conn, id: i32) -> MR<Self> {
-        posts::table.find(id).first(conn)
-    }
+    get!(posts);
 
-    pub fn gets_by_page(
-        conn: &Conn,
-        order_mode: u8,
-        page: u32,
-        page_size: u32,
-        is_admin: bool,
-    ) -> MR<Vec<Self>> {
+    set_deleted!(posts);
+
+    pub fn gets_by_page(conn: &Conn, order_mode: u8, page: u32, page_size: u32) -> MR<Vec<Self>> {
         let mut query = posts::table.into_boxed();
-        if !is_admin {
-            query = query.filter(posts::is_deleted.eq(false));
-            if order_mode > 0 {
-                query = query.filter(posts::is_reported.eq(false))
-            }
+        query = query.filter(posts::is_deleted.eq(false));
+        if order_mode > 0 {
+            query = query.filter(posts::is_reported.eq(false))
         }
 
         match order_mode {
@@ -86,9 +95,17 @@ impl Post {
     pub fn update_cw(&self, conn: &Conn, new_cw: &str) -> MR<usize> {
         diesel::update(self).set(posts::cw.eq(new_cw)).execute(conn)
     }
+
+    pub fn after_add_comment(&self, conn: &Conn) -> MR<()> {
+        diesel::update(self)
+            .set(posts::n_comments.eq(posts::n_comments + 1))
+            .execute(conn)?;
+        // TODO: attention, hot_score
+        Ok(())
+    }
 }
 
-#[derive(Queryable, Debug)]
+#[derive(Queryable, Identifiable)]
 pub struct User {
     pub id: i32,
     pub name: String,
@@ -102,7 +119,7 @@ impl User {
     }
 }
 
-#[derive(Queryable, Debug)]
+#[derive(Queryable, Identifiable)]
 pub struct Comment {
     pub id: i32,
     pub author_hash: String,
@@ -113,4 +130,23 @@ pub struct Comment {
     pub post_id: i32,
 }
 
-impl Comment {}
+#[derive(Insertable)]
+#[table_name = "comments"]
+pub struct NewComment<'a> {
+    pub content: &'a str,
+    pub author_hash: &'a str,
+    pub author_title: &'a str,
+    pub post_id: i32,
+}
+
+impl Comment {
+    get!(comments);
+
+    set_deleted!(comments);
+
+    pub fn create(conn: &Conn, new_comment: NewComment) -> MR<usize> {
+        insert_into(comments::table)
+            .values(&new_comment)
+            .execute(conn)
+    }
+}
