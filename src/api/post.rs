@@ -1,20 +1,20 @@
 use crate::api::comment::{c2output, CommentOutput};
-use crate::api::{APIError, CurrentUser, PolicyError::*, API, UGC};
-use crate::db_conn::DbConn;
+use crate::api::{APIError, CurrentUser, JsonAPI, MapToAPIError, PolicyError::*, UGC};
+use crate::db_conn::Db;
 use crate::models::*;
+use crate::rds_conn::RdsConn;
+use crate::rds_models::*;
 use chrono::NaiveDateTime;
 use rocket::form::Form;
-use rocket::serde::{
-    json::{json, Value},
-    Serialize,
-};
+use rocket::futures::future;
+use rocket::serde::{json::json, Serialize};
 
 #[derive(FromForm)]
-pub struct PostInput<'r> {
+pub struct PostInput {
     #[field(validate = len(1..4097))]
-    text: &'r str,
+    text: String,
     #[field(validate = len(0..33))]
-    cw: &'r str,
+    cw: String,
     allow_search: Option<i8>,
     use_title: Option<i8>,
 }
@@ -26,7 +26,8 @@ pub struct PostOutput {
     text: String,
     cw: Option<String>,
     custom_title: Option<String>,
-    n_likes: i32,
+    is_tmp: bool,
+    n_attentions: i32,
     n_comments: i32,
     create_time: NaiveDateTime,
     last_comment_time: NaiveDateTime,
@@ -34,6 +35,7 @@ pub struct PostOutput {
     is_reported: Option<bool>,
     comments: Option<Vec<CommentOutput>>,
     can_del: bool,
+    attention: bool,
     // for old version frontend
     timestamp: i64,
     likenum: i32,
@@ -41,23 +43,22 @@ pub struct PostOutput {
 }
 
 #[derive(FromForm)]
-pub struct CwInput<'r> {
+pub struct CwInput {
     pid: i32,
     #[field(validate = len(0..33))]
-    cw: &'r str,
+    cw: String,
 }
 
-fn p2output(p: &Post, user: &CurrentUser, conn: &DbConn) -> PostOutput {
+async fn p2output(p: &Post, user: &CurrentUser, db: &Db, rconn: RdsConn) -> PostOutput {
     PostOutput {
         pid: p.id,
-        text: p.content.to_string(),
-
+        text: format!("{}{}", if p.is_tmp { "[tmp]\n" } else { "" }, p.content),
         cw: if p.cw.len() > 0 {
             Some(p.cw.to_string())
         } else {
             None
         },
-        n_likes: p.n_likes,
+        n_attentions: p.n_attentions,
         n_comments: p.n_comments,
         create_time: p.create_time,
         last_comment_time: p.last_comment_time,
@@ -67,6 +68,7 @@ fn p2output(p: &Post, user: &CurrentUser, conn: &DbConn) -> PostOutput {
         } else {
             None
         },
+        is_tmp: p.is_tmp,
         is_reported: if user.is_admin {
             Some(p.is_reported)
         } else {
@@ -76,34 +78,59 @@ fn p2output(p: &Post, user: &CurrentUser, conn: &DbConn) -> PostOutput {
             None
         } else {
             // 单个洞还有查询评论的接口，这里挂了不用报错
-            Some(c2output(p, &p.get_comments(conn).unwrap_or(vec![]), user))
+            let pid = p.id;
+            if let Some(cs) = Comment::gets_by_post_id(db, pid).await.ok() {
+                Some(c2output(p, &cs, user))
+            } else {
+                None
+            }
         },
         can_del: user.is_admin || p.author_hash == user.namehash,
+        attention: Attention::init(&user.namehash, rconn.clone())
+            .has(p.id)
+            .await
+            .unwrap_or_default(),
         // for old version frontend
         timestamp: p.create_time.timestamp(),
-        likenum: p.n_likes,
+        likenum: p.n_attentions,
         reply: p.n_comments,
     }
 }
 
+pub async fn ps2outputs(
+    ps: &Vec<Post>,
+    user: &CurrentUser,
+    db: &Db,
+    rconn: RdsConn,
+) -> Vec<PostOutput> {
+    future::join_all(
+        ps.iter()
+            .map(|p| async { p2output(p, &user, &db, rconn.clone()).await }),
+    )
+    .await
+}
+
 #[get("/getone?<pid>")]
-pub fn get_one(pid: i32, user: CurrentUser, conn: DbConn) -> API<Value> {
-    let p = Post::get(&conn, pid).map_err(APIError::from_db)?;
+pub async fn get_one(pid: i32, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonAPI {
+    let p = Post::get(&db, pid).await.m()?;
     p.check_permission(&user, "ro")?;
     Ok(json!({
-        "data": p2output(&p, &user, &conn),
+        "data": p2output(&p, &user,&db, rconn).await,
         "code": 0,
     }))
 }
 
 #[get("/getlist?<p>&<order_mode>")]
-pub fn get_list(p: Option<u32>, order_mode: u8, user: CurrentUser, conn: DbConn) -> API<Value> {
+pub async fn get_list(
+    p: Option<u32>,
+    order_mode: u8,
+    user: CurrentUser,
+    db: Db,
+    rconn: RdsConn,
+) -> JsonAPI {
     let page = p.unwrap_or(1);
-    let ps = Post::gets_by_page(&conn, order_mode, page, 25).map_err(APIError::from_db)?;
-    let ps_data = ps
-        .iter()
-        .map(|p| p2output(p, &user, &conn))
-        .collect::<Vec<PostOutput>>();
+    let ps = Post::gets_by_page(&db, order_mode, page, 25).await.m()?;
+    let ps_data = ps2outputs(&ps, &user, &db, rconn.clone()).await;
     Ok(json!({
         "data": ps_data,
         "count": ps_data.len(),
@@ -112,19 +139,22 @@ pub fn get_list(p: Option<u32>, order_mode: u8, user: CurrentUser, conn: DbConn)
 }
 
 #[post("/dopost", data = "<poi>")]
-pub fn publish_post(poi: Form<PostInput>, user: CurrentUser, conn: DbConn) -> API<Value> {
-    dbg!(poi.use_title, poi.allow_search);
+pub async fn publish_post(poi: Form<PostInput>, user: CurrentUser, db: Db) -> JsonAPI {
     let r = Post::create(
-        &conn,
+        &db,
         NewPost {
-            content: &poi.text,
-            cw: &poi.cw,
-            author_hash: &user.namehash,
-            author_title: "",
+            content: poi.text.to_string(),
+            cw: poi.cw.to_string(),
+            author_hash: user.namehash.to_string(),
+            author_title: "".to_string(),
+            is_tmp: user.id.is_none(),
+            n_attentions: 1,
             allow_search: poi.allow_search.is_some(),
         },
     )
-    .map_err(APIError::from_db)?;
+    .await
+    .m()?;
+    // TODO: attention
     Ok(json!({
         "data": r,
         "code": 0
@@ -132,12 +162,23 @@ pub fn publish_post(poi: Form<PostInput>, user: CurrentUser, conn: DbConn) -> AP
 }
 
 #[post("/editcw", data = "<cwi>")]
-pub fn edit_cw(cwi: Form<CwInput>, user: CurrentUser, conn: DbConn) -> API<Value> {
-    let p = Post::get(&conn, cwi.pid).map_err(APIError::from_db)?;
+pub async fn edit_cw(cwi: Form<CwInput>, user: CurrentUser, db: Db) -> JsonAPI {
+    let p = Post::get(&db, cwi.pid).await.m()?;
     if !(user.is_admin || p.author_hash == user.namehash) {
         return Err(APIError::PcError(NotAllowed));
     }
     p.check_permission(&user, "w")?;
-    _ = p.update_cw(&conn, cwi.cw);
+    _ = p.update_cw(&db, cwi.cw.to_string()).await.m()?;
     Ok(json!({"code": 0}))
+}
+
+#[get("/getmulti?<pids>")]
+pub async fn get_multi(pids: Vec<i32>, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonAPI {
+    let ps = Post::get_multi(&db, pids).await.m()?;
+    let ps_data = ps2outputs(&ps, &user, &db, rconn.clone()).await;
+
+    Ok(json!({
+        "code": 0,
+        "data": ps_data,
+    }))
 }

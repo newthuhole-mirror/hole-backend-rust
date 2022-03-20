@@ -1,10 +1,11 @@
-use crate::db_conn::{Conn, DbPool};
+use crate::db_conn::Db;
 use crate::models::*;
 use crate::random_hasher::RandomHasher;
 use rocket::http::Status;
+use rocket::outcome::try_outcome;
 use rocket::request::{FromRequest, Outcome, Request};
 use rocket::response::{self, Responder};
-use rocket::serde::json::json;
+use rocket::serde::json::{json, Value};
 
 #[catch(401)]
 pub fn catch_401_error() -> &'static str {
@@ -36,8 +37,8 @@ impl<'r> FromRequest<'r> for CurrentUser {
                     is_admin: false,
                 });
             } else {
-                let conn = request.rocket().state::<DbPool>().unwrap().get().unwrap();
-                if let Some(user) = User::get_by_token(&conn, token) {
+                let db = try_outcome!(request.guard::<Db>().await);
+                if let Some(user) = User::get_by_token(&db, token).await {
                     let namehash = rh.hash_with_salt(&user.name);
                     cu = Some(CurrentUser {
                         id: Some(user.id),
@@ -55,14 +56,17 @@ impl<'r> FromRequest<'r> for CurrentUser {
     }
 }
 
+#[derive(Debug)]
 pub enum PolicyError {
     IsReported,
     IsDeleted,
     NotAllowed,
 }
 
+#[derive(Debug)]
 pub enum APIError {
     DbError(diesel::result::Error),
+    RdsError(redis::RedisError),
     PcError(PolicyError),
 }
 
@@ -70,12 +74,22 @@ impl APIError {
     fn from_db(err: diesel::result::Error) -> APIError {
         APIError::DbError(err)
     }
+
+    fn from_rds(err: redis::RedisError) -> APIError {
+        APIError::RdsError(err)
+    }
 }
 
 impl<'r> Responder<'r, 'static> for APIError {
     fn respond_to(self, req: &'r Request<'_>) -> response::Result<'static> {
+        dbg!(&self);
         match self {
             APIError::DbError(e) => json!({
+                "code": -1,
+                "msg": e.to_string()
+            })
+            .respond_to(req),
+            APIError::RdsError(e) => json!({
                 "code": -1,
                 "msg": e.to_string()
             })
@@ -93,12 +107,35 @@ impl<'r> Responder<'r, 'static> for APIError {
     }
 }
 
+pub type API<T> = Result<T, APIError>;
+pub type JsonAPI = API<Value>;
+
+pub trait MapToAPIError {
+    type Data;
+    fn m(self) -> API<Self::Data>;
+}
+
+impl<T> MapToAPIError for redis::RedisResult<T> {
+    type Data = T;
+    fn m(self) -> API<Self::Data> {
+        Ok(self.map_err(APIError::from_rds)?)
+    }
+}
+
+impl<T> MapToAPIError for diesel::QueryResult<T> {
+    type Data = T;
+    fn m(self) -> API<Self::Data> {
+        Ok(self.map_err(APIError::from_db)?)
+    }
+}
+
+#[rocket::async_trait]
 pub trait UGC {
     fn get_author_hash(&self) -> &str;
     fn get_is_deleted(&self) -> bool;
     fn get_is_reported(&self) -> bool;
     fn extra_delete_condition(&self) -> bool;
-    fn do_set_deleted(&self, conn: &Conn) -> API<()>;
+    async fn do_set_deleted(&self, db: &Db) -> API<usize>;
     fn check_permission(&self, user: &CurrentUser, mode: &str) -> API<()> {
         if user.is_admin {
             return Ok(());
@@ -118,14 +155,15 @@ pub trait UGC {
         Ok(())
     }
 
-    fn soft_delete(&self, user: &CurrentUser, conn: &Conn) -> API<()> {
+    async fn soft_delete(&self, user: &CurrentUser, db: &Db) -> API<()> {
         self.check_permission(user, "rwd")?;
 
-        self.do_set_deleted(conn)?;
+        let _ = self.do_set_deleted(db).await?;
         Ok(())
     }
 }
 
+#[rocket::async_trait]
 impl UGC for Post {
     fn get_author_hash(&self) -> &str {
         &self.author_hash
@@ -139,11 +177,12 @@ impl UGC for Post {
     fn extra_delete_condition(&self) -> bool {
         self.n_comments == 0
     }
-    fn do_set_deleted(&self, conn: &Conn) -> API<()> {
-        self.set_deleted(conn).map_err(APIError::from_db)
+    async fn do_set_deleted(&self, db: &Db) -> API<usize> {
+        self.set_deleted(db).await.m()
     }
 }
 
+#[rocket::async_trait]
 impl UGC for Comment {
     fn get_author_hash(&self) -> &str {
         &self.author_hash
@@ -157,8 +196,8 @@ impl UGC for Comment {
     fn extra_delete_condition(&self) -> bool {
         true
     }
-    fn do_set_deleted(&self, conn: &Conn) -> API<()> {
-        self.set_deleted(conn).map_err(APIError::from_db)
+    async fn do_set_deleted(&self, db: &Db) -> API<usize> {
+        self.set_deleted(db).await.m()
     }
 }
 
@@ -168,8 +207,7 @@ macro_rules! look {
     };
 }
 
-pub type API<T> = Result<T, APIError>;
-
+pub mod attention;
 pub mod comment;
 pub mod operation;
 pub mod post;

@@ -1,30 +1,41 @@
 #![allow(clippy::all)]
 
 use chrono::NaiveDateTime;
-use diesel::{insert_into, ExpressionMethods, QueryDsl, RunQueryDsl};
+use diesel::{insert_into, ExpressionMethods, QueryDsl, QueryResult, RunQueryDsl};
 
-use crate::db_conn::Conn;
+use crate::db_conn::Db;
 use crate::schema::*;
-
-type MR<T> = Result<T, diesel::result::Error>;
 
 no_arg_sql_function!(RANDOM, (), "Represents the sql RANDOM() function");
 
 macro_rules! get {
     ($table:ident) => {
-        pub fn get(conn: &Conn, id: i32) -> MR<Self> {
-            $table::table.find(id).first(conn)
+        pub async fn get(db: &Db, id: i32) -> QueryResult<Self> {
+            let pid = id;
+            db.run(move |c| $table::table.find(pid).first(c)).await
+        }
+    };
+}
+
+macro_rules! get_multi {
+    ($table:ident) => {
+        pub async fn get_multi(db: &Db, ids: Vec<i32>) -> QueryResult<Vec<Self>> {
+            db.run(move |c| $table::table.filter($table::id.eq_any(ids)).load(c))
+                .await
         }
     };
 }
 
 macro_rules! set_deleted {
     ($table:ident) => {
-        pub fn set_deleted(&self, conn: &Conn) -> MR<()> {
-            diesel::update(self)
-                .set($table::is_deleted.eq(true))
-                .execute(conn)?;
-            Ok(())
+        pub async fn set_deleted(&self, db: &Db) -> QueryResult<usize> {
+            let pid = self.id;
+            db.run(move |c| {
+                diesel::update($table::table.find(pid))
+                    .set($table::is_deleted.eq(true))
+                    .execute(c)
+            })
+            .await
         }
     };
 }
@@ -36,7 +47,8 @@ pub struct Post {
     pub content: String,
     pub cw: String,
     pub author_title: String,
-    pub n_likes: i32,
+    pub is_tmp: bool,
+    pub n_attentions: i32,
     pub n_comments: i32,
     pub create_time: NaiveDateTime,
     pub last_comment_time: NaiveDateTime,
@@ -48,11 +60,13 @@ pub struct Post {
 
 #[derive(Insertable)]
 #[table_name = "posts"]
-pub struct NewPost<'a> {
-    pub content: &'a str,
-    pub cw: &'a str,
-    pub author_hash: &'a str,
-    pub author_title: &'a str,
+pub struct NewPost {
+    pub content: String,
+    pub cw: String,
+    pub author_hash: String,
+    pub author_title: String,
+    pub is_tmp: bool,
+    pub n_attentions: i32,
     pub allow_search: bool,
     // TODO: tags
 }
@@ -60,48 +74,72 @@ pub struct NewPost<'a> {
 impl Post {
     get!(posts);
 
+    get_multi!(posts);
+
     set_deleted!(posts);
 
-    pub fn gets_by_page(conn: &Conn, order_mode: u8, page: u32, page_size: u32) -> MR<Vec<Self>> {
-        let mut query = posts::table.into_boxed();
-        query = query.filter(posts::is_deleted.eq(false));
-        if order_mode > 0 {
-            query = query.filter(posts::is_reported.eq(false))
-        }
+    pub async fn gets_by_page(
+        db: &Db,
+        order_mode: u8,
+        page: u32,
+        page_size: u32,
+    ) -> QueryResult<Vec<Self>> {
+        db.run(move |c| {
+            let mut query = posts::table.into_boxed();
+            query = query.filter(posts::is_deleted.eq(false));
+            if order_mode > 0 {
+                query = query.filter(posts::is_reported.eq(false))
+            }
 
-        match order_mode {
-            1 => query = query.order(posts::last_comment_time.desc()),
-            2 => query = query.order(posts::hot_score.desc()),
-            3 => query = query.order(RANDOM),
-            _ => query = query.order(posts::id.desc()),
-        }
-        query
-            .offset(((page - 1) * page_size).into())
-            .limit(page_size.into())
-            .load(conn)
+            match order_mode {
+                1 => query = query.order(posts::last_comment_time.desc()),
+                2 => query = query.order(posts::hot_score.desc()),
+                3 => query = query.order(RANDOM),
+                _ => query = query.order(posts::id.desc()),
+            }
+
+            query
+                .offset(((page - 1) * page_size).into())
+                .limit(page_size.into())
+                .load(c)
+        })
+        .await
     }
 
-    pub fn get_comments(&self, conn: &Conn) -> MR<Vec<Comment>> {
-        comments::table
-            .filter(comments::post_id.eq(self.id))
-            .load(conn)
-    }
-
-    pub fn create(conn: &Conn, new_post: NewPost) -> MR<usize> {
+    pub async fn create(db: &Db, new_post: NewPost) -> QueryResult<usize> {
         // TODO: tags
-        insert_into(posts::table).values(&new_post).execute(conn)
+        db.run(move |c| insert_into(posts::table).values(&new_post).execute(c))
+            .await
     }
 
-    pub fn update_cw(&self, conn: &Conn, new_cw: &str) -> MR<usize> {
-        diesel::update(self).set(posts::cw.eq(new_cw)).execute(conn)
+    pub async fn update_cw(&self, db: &Db, new_cw: String) -> QueryResult<usize> {
+        let pid = self.id;
+        db.run(move |c| {
+            diesel::update(posts::table.find(pid))
+                .set(posts::cw.eq(new_cw))
+                .execute(c)
+        })
+        .await
     }
 
-    pub fn after_add_comment(&self, conn: &Conn) -> MR<()> {
-        diesel::update(self)
-            .set(posts::n_comments.eq(posts::n_comments + 1))
-            .execute(conn)?;
-        // TODO: attention, hot_score
-        Ok(())
+    pub async fn change_n_comments(&self, db: &Db, delta: i32) -> QueryResult<usize> {
+        let pid = self.id;
+        db.run(move |c| {
+            diesel::update(posts::table.find(pid))
+                .set(posts::n_comments.eq(posts::n_comments + delta))
+                .execute(c)
+        })
+        .await
+    }
+
+    pub async fn change_n_attentions(&self, db: &Db, delta: i32) -> QueryResult<usize> {
+        let pid = self.id;
+        db.run(move |c| {
+            diesel::update(posts::table.find(pid))
+                .set(posts::n_attentions.eq(posts::n_attentions + delta))
+                .execute(c)
+        })
+        .await
     }
 }
 
@@ -114,8 +152,11 @@ pub struct User {
 }
 
 impl User {
-    pub fn get_by_token(conn: &Conn, token: &str) -> Option<Self> {
-        users::table.filter(users::token.eq(token)).first(conn).ok()
+    pub async fn get_by_token(db: &Db, token: &str) -> Option<Self> {
+        let token = token.to_string();
+        db.run(move |c| users::table.filter(users::token.eq(token)).first(c))
+            .await
+            .ok()
     }
 }
 
@@ -124,6 +165,7 @@ pub struct Comment {
     pub id: i32,
     pub author_hash: String,
     pub author_title: String,
+    pub is_tmp: bool,
     pub content: String,
     pub create_time: NaiveDateTime,
     pub is_deleted: bool,
@@ -132,10 +174,11 @@ pub struct Comment {
 
 #[derive(Insertable)]
 #[table_name = "comments"]
-pub struct NewComment<'a> {
-    pub content: &'a str,
-    pub author_hash: &'a str,
-    pub author_title: &'a str,
+pub struct NewComment {
+    pub content: String,
+    pub author_hash: String,
+    pub author_title: String,
+    pub is_tmp: bool,
     pub post_id: i32,
 }
 
@@ -144,9 +187,14 @@ impl Comment {
 
     set_deleted!(comments);
 
-    pub fn create(conn: &Conn, new_comment: NewComment) -> MR<usize> {
-        insert_into(comments::table)
-            .values(&new_comment)
-            .execute(conn)
+    pub async fn create(db: &Db, new_comment: NewComment) -> QueryResult<usize> {
+        db.run(move |c| insert_into(comments::table).values(&new_comment).execute(c))
+            .await
+    }
+
+    pub async fn gets_by_post_id(db: &Db, post_id: i32) -> QueryResult<Vec<Self>> {
+        let pid = post_id;
+        db.run(move |c| comments::table.filter(comments::post_id.eq(pid)).load(c))
+            .await
     }
 }

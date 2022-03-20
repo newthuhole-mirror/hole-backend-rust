@@ -3,6 +3,7 @@ table! {
         id -> Integer,
         author_hash -> Text,
         author_title -> Text,
+        is_tmp -> Bool,
         content -> Text,
         create_time -> Timestamp,
         is_deleted -> Bool,
@@ -17,7 +18,8 @@ table! {
         content -> Text,
         cw -> Text,
         author_title -> Text,
-        n_likes -> Integer,
+        is_tmp -> Bool,
+        n_attentions -> Integer,
         n_comments -> Integer,
         create_time -> Timestamp,
         last_comment_time -> Timestamp,
@@ -36,6 +38,8 @@ table! {
         is_admin -> Bool,
     }
 }
+
+joinable!(comments -> posts (post_id));
 
 allow_tables_to_appear_in_same_query!(
     comments,

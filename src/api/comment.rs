@@ -1,6 +1,8 @@
-use crate::api::{APIError, CurrentUser, PolicyError::*, API};
-use crate::db_conn::DbConn;
+use crate::api::{APIError, CurrentUser, MapToAPIError, PolicyError::*, API};
+use crate::db_conn::Db;
 use crate::models::*;
+use crate::rds_conn::RdsConn;
+use crate::rds_models::*;
 use chrono::NaiveDateTime;
 use rocket::form::Form;
 use rocket::serde::{
@@ -10,10 +12,10 @@ use rocket::serde::{
 use std::collections::HashMap;
 
 #[derive(FromForm)]
-pub struct CommentInput<'r> {
+pub struct CommentInput {
     pid: i32,
     #[field(validate = len(1..4097))]
-    text: &'r str,
+    text: String,
     use_title: Option<i8>,
 }
 
@@ -24,12 +26,13 @@ pub struct CommentOutput {
     text: String,
     can_del: bool,
     name_id: i32,
+    is_tmp: bool,
     create_time: NaiveDateTime,
     // for old version frontend
     timestamp: i64,
 }
 
-pub fn c2output(p: &Post, cs: &Vec<Comment>, user: &CurrentUser) -> Vec<CommentOutput> {
+pub fn c2output<'r>(p: &'r Post, cs: &Vec<Comment>, user: &CurrentUser) -> Vec<CommentOutput> {
     let mut hash2id = HashMap::<&String, i32>::from([(&p.author_hash, 0)]);
     cs.iter()
         .filter_map(|c| {
@@ -41,19 +44,16 @@ pub fn c2output(p: &Post, cs: &Vec<Comment>, user: &CurrentUser) -> Vec<CommentO
                     x
                 }
             };
-            if false {
+            if c.is_deleted {
                 // TODO: block
                 None
             } else {
                 Some(CommentOutput {
                     cid: c.id,
-                    text: if c.is_deleted {
-                        "[已删除]".to_string()
-                    } else {
-                        c.content.to_string()
-                    },
+                    text: format!("{}{}", if c.is_tmp { "[tmp]\n" } else { "" }, c.content),
                     can_del: user.is_admin || c.author_hash == user.namehash,
                     name_id: name_id,
+                    is_tmp: c.is_tmp,
                     create_time: c.create_time,
                     timestamp: c.create_time.timestamp(),
                 })
@@ -63,35 +63,52 @@ pub fn c2output(p: &Post, cs: &Vec<Comment>, user: &CurrentUser) -> Vec<CommentO
 }
 
 #[get("/getcomment?<pid>")]
-pub fn get_comment(pid: i32, user: CurrentUser, conn: DbConn) -> API<Value> {
-    let p = Post::get(&conn, pid).map_err(APIError::from_db)?;
+pub async fn get_comment(pid: i32, user: CurrentUser, db: Db, rconn: RdsConn) -> API<Value> {
+    let p = Post::get(&db, pid).await.m()?;
     if p.is_deleted {
         return Err(APIError::PcError(IsDeleted));
     }
-    let cs = p.get_comments(&conn).map_err(APIError::from_db)?;
+    let pid = p.id;
+    let cs = Comment::gets_by_post_id(&db, pid).await.m()?;
+    let data = c2output(&p, &cs, &user);
+
     Ok(json!({
         "code": 0,
-        "data": c2output(&p, &cs, &user),
-        "n_likes": p.n_likes,
+        "data": data,
+        "n_attentions": p.n_attentions,
         // for old version frontend
-        "likenum": p.n_likes,
+        "likenum": p.n_attentions,
+        "attention": Attention::init(&user.namehash, rconn.clone()).has(p.id).await.m()? ,
     }))
 }
 
 #[post("/docomment", data = "<ci>")]
-pub fn add_comment(ci: Form<CommentInput>, user: CurrentUser, conn: DbConn) -> API<Value> {
-    let p = Post::get(&conn, ci.pid).map_err(APIError::from_db)?;
+pub async fn add_comment(
+    ci: Form<CommentInput>,
+    user: CurrentUser,
+    db: Db,
+    rconn: RdsConn,
+) -> API<Value> {
+    let p = Post::get(&db, ci.pid).await.m()?;
     Comment::create(
-        &conn,
+        &db,
         NewComment {
-            content: &ci.text,
-            author_hash: &user.namehash,
-            author_title: "",
+            content: ci.text.to_string(),
+            author_hash: user.namehash.to_string(),
+            author_title: "".to_string(),
+            is_tmp: user.id.is_none(),
             post_id: ci.pid,
         },
     )
-    .map_err(APIError::from_db)?;
-    p.after_add_comment(&conn).map_err(APIError::from_db)?;
+    .await
+    .m()?;
+    p.change_n_comments(&db, 1).await.m()?;
+    // auto attention after comment
+    let mut att = Attention::init(&user.namehash, rconn);
+    if !att.has(p.id).await.m()? {
+        att.add(p.id).await.m()?;
+        p.change_n_attentions(&db, 1).await.m()?;
+    }
     Ok(json!({
         "code": 0
     }))

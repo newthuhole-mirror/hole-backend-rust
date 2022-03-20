@@ -2,10 +2,10 @@ use crate::api::{CurrentUser, API};
 use crate::random_hasher::RandomHasher;
 use rocket::serde::json::{json, Value};
 use rocket::State;
-use crate::db_conn::DbConn;
+use crate::db_conn::Db;
 
 #[get("/systemlog")]
-pub fn get_systemlog(user: CurrentUser, rh: &State<RandomHasher>, conn: DbConn) -> API<Value> {
+pub async fn get_systemlog(user: CurrentUser, rh: &State<RandomHasher>, db: Db) -> API<Value> {
     Ok(json!({
         "tmp_token": rh.get_tmp_token(),
         "salt": look!(rh.salt),
