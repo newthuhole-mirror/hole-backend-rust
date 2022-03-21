@@ -21,5 +21,4 @@ CREATE EXTENSION pg_trgm;
 
 ```
 $ diesel run
-$ python3 tools/migdb.py
 ```

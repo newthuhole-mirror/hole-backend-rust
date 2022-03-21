@@ -3,7 +3,7 @@ use crate::db_conn::Db;
 use crate::models::*;
 use crate::rds_conn::RdsConn;
 use crate::rds_models::*;
-use chrono::NaiveDateTime;
+use chrono::{offset::Utc, DateTime};
 use rocket::form::Form;
 use rocket::serde::{
     json::{json, Value},
@@ -27,7 +27,7 @@ pub struct CommentOutput {
     can_del: bool,
     name_id: i32,
     is_tmp: bool,
-    create_time: NaiveDateTime,
+    create_time: DateTime<Utc>,
     // for old version frontend
     timestamp: i64,
 }

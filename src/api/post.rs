@@ -4,7 +4,7 @@ use crate::db_conn::Db;
 use crate::models::*;
 use crate::rds_conn::RdsConn;
 use crate::rds_models::*;
-use chrono::NaiveDateTime;
+use chrono::{offset::Utc, DateTime};
 use rocket::form::Form;
 use rocket::futures::future;
 use rocket::serde::{json::json, Serialize};
@@ -29,8 +29,8 @@ pub struct PostOutput {
     is_tmp: bool,
     n_attentions: i32,
     n_comments: i32,
-    create_time: NaiveDateTime,
-    last_comment_time: NaiveDateTime,
+    create_time: DateTime<Utc>,
+    last_comment_time: DateTime<Utc>,
     allow_search: bool,
     is_reported: Option<bool>,
     comments: Option<Vec<CommentOutput>>,

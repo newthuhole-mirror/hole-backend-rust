@@ -1,6 +1,5 @@
 #![allow(clippy::all)]
 
-use chrono::NaiveDateTime;
 use diesel::{insert_into, ExpressionMethods, QueryDsl, QueryResult, RunQueryDsl};
 
 use crate::db_conn::Db;
@@ -21,8 +20,13 @@ macro_rules! get_multi {
     ($table:ident) => {
         pub async fn get_multi(db: &Db, ids: Vec<i32>) -> QueryResult<Vec<Self>> {
             // can use eq(any()) for postgres
-            db.run(move |c| $table::table.filter($table::id.eq_any(ids)).load(c))
-                .await
+            db.run(move |c| {
+                $table::table
+                    .filter($table::id.eq_any(ids))
+                    .order($table::id.desc())
+                    .load(c)
+            })
+            .await
         }
     };
 }
@@ -41,7 +45,21 @@ macro_rules! set_deleted {
     };
 }
 
-#[derive(Queryable, Identifiable)]
+use chrono::{offset::Utc, DateTime};
+#[derive(Queryable, Insertable)]
+pub struct Comment {
+    pub id: i32,
+    pub author_hash: String,
+    pub author_title: String,
+    pub is_tmp: bool,
+    pub content: String,
+    pub create_time: DateTime<Utc>,
+    pub is_deleted: bool,
+    pub allow_search: bool,
+    pub post_id: i32,
+}
+
+#[derive(Queryable, Insertable)]
 pub struct Post {
     pub id: i32,
     pub author_hash: String,
@@ -51,12 +69,20 @@ pub struct Post {
     pub is_tmp: bool,
     pub n_attentions: i32,
     pub n_comments: i32,
-    pub create_time: NaiveDateTime,
-    pub last_comment_time: NaiveDateTime,
+    pub create_time: DateTime<Utc>,
+    pub last_comment_time: DateTime<Utc>,
     pub is_deleted: bool,
     pub is_reported: bool,
     pub hot_score: i32,
     pub allow_search: bool,
+}
+
+#[derive(Queryable, Insertable)]
+pub struct User {
+    pub id: i32,
+    pub name: String,
+    pub token: String,
+    pub is_admin: bool,
 }
 
 #[derive(Insertable)]
@@ -144,14 +170,6 @@ impl Post {
     }
 }
 
-#[derive(Queryable, Identifiable)]
-pub struct User {
-    pub id: i32,
-    pub name: String,
-    pub token: String,
-    pub is_admin: bool,
-}
-
 impl User {
     pub async fn get_by_token(db: &Db, token: &str) -> Option<Self> {
         let token = token.to_string();
@@ -159,19 +177,6 @@ impl User {
             .await
             .ok()
     }
-}
-
-#[derive(Queryable, Identifiable)]
-pub struct Comment {
-    pub id: i32,
-    pub author_hash: String,
-    pub author_title: String,
-    pub is_tmp: bool,
-    pub content: String,
-    pub create_time: NaiveDateTime,
-    pub is_deleted: bool,
-    pub allow_search: bool,
-    pub post_id: i32,
 }
 
 #[derive(Insertable)]
@@ -200,7 +205,12 @@ impl Comment {
 
     pub async fn gets_by_post_id(db: &Db, post_id: i32) -> QueryResult<Vec<Self>> {
         let pid = post_id;
-        db.run(move |c| comments::table.filter(comments::post_id.eq(pid)).load(c))
-            .await
+        db.run(move |c| {
+            comments::table
+                .filter(comments::post_id.eq(pid))
+                .order(comments::id)
+                .load(c)
+        })
+        .await
     }
 }
