@@ -85,7 +85,7 @@ async fn p2output(p: &Post, user: &CurrentUser, db: &Db, rconn: RdsConn) -> Post
                 None
             }
         },
-        can_del: user.is_admin || p.author_hash == user.namehash,
+        can_del: p.check_permission(user, "wd").is_ok(),
         attention: Attention::init(&user.namehash, rconn.clone())
             .has(p.id)
             .await
