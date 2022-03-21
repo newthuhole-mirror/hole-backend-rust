@@ -1,40 +1,41 @@
 table! {
     comments (id) {
-        id -> Integer,
-        author_hash -> Text,
-        author_title -> Text,
+        id -> Int4,
+        author_hash -> Varchar,
+        author_title -> Varchar,
         is_tmp -> Bool,
         content -> Text,
         create_time -> Timestamp,
         is_deleted -> Bool,
-        post_id -> Integer,
+        allow_search -> Bool,
+        post_id -> Int4,
     }
 }
 
 table! {
     posts (id) {
-        id -> Integer,
-        author_hash -> Text,
+        id -> Int4,
+        author_hash -> Varchar,
         content -> Text,
-        cw -> Text,
-        author_title -> Text,
+        cw -> Varchar,
+        author_title -> Varchar,
         is_tmp -> Bool,
-        n_attentions -> Integer,
-        n_comments -> Integer,
+        n_attentions -> Int4,
+        n_comments -> Int4,
         create_time -> Timestamp,
         last_comment_time -> Timestamp,
         is_deleted -> Bool,
         is_reported -> Bool,
-        hot_score -> Integer,
+        hot_score -> Int4,
         allow_search -> Bool,
     }
 }
 
 table! {
     users (id) {
-        id -> Integer,
-        name -> Text,
-        token -> Text,
+        id -> Int4,
+        name -> Varchar,
+        token -> Varchar,
         is_admin -> Bool,
     }
 }

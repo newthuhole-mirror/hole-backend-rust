@@ -18,11 +18,12 @@ pub async fn delete(di: Form<DeleteInput>, user: CurrentUser, db: Db) -> API<Val
         "cid" => {
             let c = Comment::get(&db, di.id).await.m()?;
             c.soft_delete(&user, &db).await?;
+            let p = Post::get(&db, c.post_id).await.m()?;
+            p.change_n_comments(&db, -1).await.m()?;
         }
         "pid" => {
             let p = Post::get(&db, di.id).await.m()?;
             p.soft_delete(&user, &db).await?;
-            p.change_n_comments(&db, -1).await.m()?;
         }
         _ => return Err(APIError::PcError(NotAllowed)),
     }

@@ -140,7 +140,7 @@ pub async fn get_list(
 
 #[post("/dopost", data = "<poi>")]
 pub async fn publish_post(poi: Form<PostInput>, user: CurrentUser, db: Db) -> JsonAPI {
-    let r = Post::create(
+    let p = Post::create(
         &db,
         NewPost {
             content: poi.text.to_string(),
@@ -156,7 +156,6 @@ pub async fn publish_post(poi: Form<PostInput>, user: CurrentUser, db: Db) -> Js
     .m()?;
     // TODO: attention
     Ok(json!({
-        "data": r,
         "code": 0
     }))
 }

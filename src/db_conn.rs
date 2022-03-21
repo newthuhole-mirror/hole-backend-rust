@@ -1,7 +1,7 @@
 use rocket_sync_db_pools::{database, diesel};
 
-pub type Conn = diesel::SqliteConnection;
+pub type Conn = diesel::pg::PgConnection;
 
-#[database("sqlite_v2")]
+#[database("pg_v2")]
 pub struct Db(Conn);
 

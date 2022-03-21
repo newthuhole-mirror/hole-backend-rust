@@ -14,7 +14,7 @@ CREATE TABLE posts (
   is_deleted BOOLEAN NOT NULL DEFAULT FALSE,
   is_reported BOOLEAN NOT NULL DEFAULT FALSE,
   hot_score INTEGER NOT NULL DEFAULT 0,
-  allow_search BOOLEAN NOT NULL DEFAULT ''
+  allow_search BOOLEAN NOT NULL DEFAULT FALSE
 );
 CREATE INDEX posts_last_comment_time_idx ON posts (`last_comment_time`);
 CREATE INDEX posts_hot_idx ON posts (`hot_score`)

@@ -20,6 +20,7 @@ macro_rules! get {
 macro_rules! get_multi {
     ($table:ident) => {
         pub async fn get_multi(db: &Db, ids: Vec<i32>) -> QueryResult<Vec<Self>> {
+            // can use eq(any()) for postgres
             db.run(move |c| $table::table.filter($table::id.eq_any(ids)).load(c))
                 .await
         }
@@ -106,9 +107,9 @@ impl Post {
         .await
     }
 
-    pub async fn create(db: &Db, new_post: NewPost) -> QueryResult<usize> {
+    pub async fn create(db: &Db, new_post: NewPost) -> QueryResult<Self> {
         // TODO: tags
-        db.run(move |c| insert_into(posts::table).values(&new_post).execute(c))
+        db.run(move |c| insert_into(posts::table).values(&new_post).get_result(c))
             .await
     }
 
@@ -169,6 +170,7 @@ pub struct Comment {
     pub content: String,
     pub create_time: NaiveDateTime,
     pub is_deleted: bool,
+    pub allow_search: bool,
     pub post_id: i32,
 }
 
@@ -187,9 +189,13 @@ impl Comment {
 
     set_deleted!(comments);
 
-    pub async fn create(db: &Db, new_comment: NewComment) -> QueryResult<usize> {
-        db.run(move |c| insert_into(comments::table).values(&new_comment).execute(c))
-            .await
+    pub async fn create(db: &Db, new_comment: NewComment) -> QueryResult<Self> {
+        db.run(move |c| {
+            insert_into(comments::table)
+                .values(&new_comment)
+                .get_result(c)
+        })
+        .await
     }
 
     pub async fn gets_by_post_id(db: &Db, post_id: i32) -> QueryResult<Vec<Self>> {
