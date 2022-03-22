@@ -70,16 +70,6 @@ pub enum APIError {
     PcError(PolicyError),
 }
 
-impl APIError {
-    fn from_db(err: diesel::result::Error) -> APIError {
-        APIError::DbError(err)
-    }
-
-    fn from_rds(err: redis::RedisError) -> APIError {
-        APIError::RdsError(err)
-    }
-}
-
 impl<'r> Responder<'r, 'static> for APIError {
     fn respond_to(self, req: &'r Request<'_>) -> response::Result<'static> {
         dbg!(&self);
@@ -107,27 +97,20 @@ impl<'r> Responder<'r, 'static> for APIError {
     }
 }
 
+impl From<diesel::result::Error> for APIError {
+    fn from(err: diesel::result::Error) -> APIError {
+        APIError::DbError(err)
+    }
+}
+
+impl From<redis::RedisError> for APIError {
+    fn from(err: redis::RedisError) -> APIError {
+        APIError::RdsError(err)
+    }
+}
+
 pub type API<T> = Result<T, APIError>;
 pub type JsonAPI = API<Value>;
-
-pub trait MapToAPIError {
-    type Data;
-    fn m(self) -> API<Self::Data>;
-}
-
-impl<T> MapToAPIError for redis::RedisResult<T> {
-    type Data = T;
-    fn m(self) -> API<Self::Data> {
-        Ok(self.map_err(APIError::from_rds)?)
-    }
-}
-
-impl<T> MapToAPIError for diesel::QueryResult<T> {
-    type Data = T;
-    fn m(self) -> API<Self::Data> {
-        Ok(self.map_err(APIError::from_db)?)
-    }
-}
 
 #[rocket::async_trait]
 pub trait UGC {
@@ -178,7 +161,7 @@ impl UGC for Post {
         self.n_comments == 0
     }
     async fn do_set_deleted(&self, db: &Db) -> API<usize> {
-        self.set_deleted(db).await.m()
+        self.set_deleted(db).await.map_err(From::from)
     }
 }
 
@@ -197,7 +180,7 @@ impl UGC for Comment {
         true
     }
     async fn do_set_deleted(&self, db: &Db) -> API<usize> {
-        self.set_deleted(db).await.m()
+        self.set_deleted(db).await.map_err(From::from)
     }
 }
 
@@ -211,4 +194,5 @@ pub mod attention;
 pub mod comment;
 pub mod operation;
 pub mod post;
+pub mod search;
 pub mod systemlog;

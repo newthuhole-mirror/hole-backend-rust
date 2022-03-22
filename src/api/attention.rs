@@ -1,5 +1,5 @@
 use crate::api::post::ps2outputs;
-use crate::api::{APIError, CurrentUser, MapToAPIError, PolicyError::*, API, UGC};
+use crate::api::{APIError, CurrentUser, PolicyError::*, API, UGC};
 use crate::db_conn::Db;
 use crate::models::*;
 use crate::rds_conn::RdsConn;
@@ -22,20 +22,22 @@ pub async fn attention_post(
     rconn: RdsConn,
 ) -> API<Value> {
     user.id.ok_or_else(|| APIError::PcError(NotAllowed))?;
-    let p = Post::get(&db, ai.pid).await.m()?;
+    let mut p = Post::get(&db, ai.pid).await?;
     p.check_permission(&user, "r")?;
-    let mut att = Attention::init(&user.namehash, rconn);
+    let mut att = Attention::init(&user.namehash, &rconn);
     let switch_to = ai.switch == 1;
     let mut delta: i32 = 0;
-    if att.has(ai.pid).await.m()? != switch_to {
+    if att.has(ai.pid).await? != switch_to {
         if switch_to {
-            att.add(ai.pid).await.m()?;
+            att.add(ai.pid).await?;
             delta = 1;
         } else {
-            att.remove(ai.pid).await.m()?;
+            att.remove(ai.pid).await?;
             delta = -1;
         }
-        p.change_n_attentions(&db, delta).await.m()?;
+        p = p.change_n_attentions(&db, delta).await?;
+        p = p.change_hot_score(&db, delta * 2).await?;
+        p.refresh_cache(&rconn, false).await;
     }
 
     Ok(json!({
@@ -49,12 +51,9 @@ pub async fn attention_post(
 
 #[get("/getattention")]
 pub async fn get_attention(user: CurrentUser, db: Db, rconn: RdsConn) -> API<Value> {
-    let ids = Attention::init(&user.namehash, rconn.clone())
-        .all()
-        .await
-        .m()?;
-    let ps = Post::get_multi(&db, ids).await.m()?;
-    let ps_data = ps2outputs(&ps, &user, &db, rconn.clone()).await;
+    let ids = Attention::init(&user.namehash, &rconn).all().await?;
+    let ps = Post::get_multi(&db, ids).await?;
+    let ps_data = ps2outputs(&ps, &user, &db, &rconn, &vec![]).await;
 
     Ok(json!({
         "code": 0,

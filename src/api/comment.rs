@@ -1,10 +1,11 @@
-use crate::api::{APIError, CurrentUser, MapToAPIError, PolicyError::*, API};
+use crate::api::{APIError, CurrentUser, PolicyError::*, API, UGC};
 use crate::db_conn::Db;
 use crate::models::*;
 use crate::rds_conn::RdsConn;
 use crate::rds_models::*;
 use chrono::{offset::Utc, DateTime};
 use rocket::form::Form;
+use rocket::futures::{future::TryFutureExt, try_join};
 use rocket::serde::{
     json::{json, Value},
     Serialize,
@@ -24,6 +25,7 @@ pub struct CommentInput {
 pub struct CommentOutput {
     cid: i32,
     text: String,
+    author_title: String,
     can_del: bool,
     name_id: i32,
     is_tmp: bool,
@@ -32,7 +34,12 @@ pub struct CommentOutput {
     timestamp: i64,
 }
 
-pub fn c2output<'r>(p: &'r Post, cs: &Vec<Comment>, user: &CurrentUser) -> Vec<CommentOutput> {
+pub fn c2output<'r>(
+    p: &'r Post,
+    cs: &Vec<Comment>,
+    user: &CurrentUser,
+    kws: &Vec<&str>,
+) -> Vec<CommentOutput> {
     let mut hash2id = HashMap::<&String, i32>::from([(&p.author_hash, 0)]);
     cs.iter()
         .filter_map(|c| {
@@ -48,10 +55,15 @@ pub fn c2output<'r>(p: &'r Post, cs: &Vec<Comment>, user: &CurrentUser) -> Vec<C
                 // TODO: block
                 None
             } else {
+                let mut text = c.content.to_string();
+                for kw in kws {
+                    text = text.replace(kw, &format!(" **{}**", kw));
+                }
                 Some(CommentOutput {
                     cid: c.id,
-                    text: format!("{}{}", if c.is_tmp { "[tmp]\n" } else { "" }, c.content),
-                    can_del: user.is_admin || c.author_hash == user.namehash,
+                    text: format!("{}{}", if c.is_tmp { "[tmp]\n" } else { "" }, text),
+                    author_title: c.author_title.to_string(),
+                    can_del: c.check_permission(user, "wd").is_ok(),
                     name_id: name_id,
                     is_tmp: c.is_tmp,
                     create_time: c.create_time,
@@ -64,13 +76,13 @@ pub fn c2output<'r>(p: &'r Post, cs: &Vec<Comment>, user: &CurrentUser) -> Vec<C
 
 #[get("/getcomment?<pid>")]
 pub async fn get_comment(pid: i32, user: CurrentUser, db: Db, rconn: RdsConn) -> API<Value> {
-    let p = Post::get(&db, pid).await.m()?;
+    let p = Post::get(&db, pid).await?;
     if p.is_deleted {
         return Err(APIError::PcError(IsDeleted));
     }
     let pid = p.id;
-    let cs = Comment::gets_by_post_id(&db, pid).await.m()?;
-    let data = c2output(&p, &cs, &user);
+    let cs = Comment::gets_by_post_id(&db, pid).await?;
+    let data = c2output(&p, &cs, &user, &vec![]);
 
     Ok(json!({
         "code": 0,
@@ -78,7 +90,7 @@ pub async fn get_comment(pid: i32, user: CurrentUser, db: Db, rconn: RdsConn) ->
         "n_attentions": p.n_attentions,
         // for old version frontend
         "likenum": p.n_attentions,
-        "attention": Attention::init(&user.namehash, rconn.clone()).has(p.id).await.m()? ,
+        "attention": Attention::init(&user.namehash, &rconn).has(p.id).await? ,
     }))
 }
 
@@ -89,7 +101,7 @@ pub async fn add_comment(
     db: Db,
     rconn: RdsConn,
 ) -> API<Value> {
-    let p = Post::get(&db, ci.pid).await.m()?;
+    let mut p = Post::get(&db, ci.pid).await?;
     Comment::create(
         &db,
         NewComment {
@@ -100,15 +112,28 @@ pub async fn add_comment(
             post_id: ci.pid,
         },
     )
-    .await
-    .m()?;
-    p.change_n_comments(&db, 1).await.m()?;
+    .await?;
+    p = p.change_n_comments(&db, 1).await?;
     // auto attention after comment
-    let mut att = Attention::init(&user.namehash, rconn);
-    if !att.has(p.id).await.m()? {
-        att.add(p.id).await.m()?;
-        p.change_n_attentions(&db, 1).await.m()?;
+    let mut att = Attention::init(&user.namehash, &rconn);
+
+    let mut hs_delta = 1;
+
+    if !att.has(p.id).await? {
+        hs_delta += 2;
+        try_join!(
+            att.add(p.id).err_into::<APIError>(),
+            async {
+                p = p.change_n_attentions(&db, 1).await?;
+                Ok::<(), APIError>(())
+            }
+            .err_into::<APIError>(),
+        )?;
     }
+
+    p = p.change_hot_score(&db, hs_delta).await?;
+    p.refresh_cache(&rconn, false).await;
+
     Ok(json!({
         "code": 0
     }))

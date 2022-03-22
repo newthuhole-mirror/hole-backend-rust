@@ -9,7 +9,7 @@ license = "AGPL-3.0"
 [dependencies]
 rocket = { version = "0.5.0-rc.1", features = ["json"] }
 diesel = { version = "1.4.8", features = ["postgres", "chrono"] }
-redis = { version="0.21.5", features = ["aio", "async-std-comp"] }
+redis = { version="0.21.5", features = ["aio", "tokio-comp"] }
 chrono = { version="0.*", features =["serde"] }
 rand = "0.*"
 dotenv = "0.*"

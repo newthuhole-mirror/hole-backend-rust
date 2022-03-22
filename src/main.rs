@@ -30,6 +30,7 @@ async fn  main() -> Result<(), rocket::Error> {
                 api::post::publish_post,
                 api::post::edit_cw,
                 api::post::get_multi,
+                api::search::search,
                 api::attention::attention_post,
                 api::attention::get_attention,
                 api::systemlog::get_systemlog,
