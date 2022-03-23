@@ -31,7 +31,7 @@ pub async fn search(
         .await?
     };
     let mark_kws = if search_mode == 1 {kws} else {vec![]};
-    let ps_data = ps2outputs(&ps, &user, &db, &rconn, &mark_kws).await;
+    let ps_data = ps2outputs(&ps, &user, &db, &rconn).await;
     Ok(json!({
         "data": ps_data,
         "count": ps_data.len(),

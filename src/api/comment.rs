@@ -38,7 +38,6 @@ pub fn c2output<'r>(
     p: &'r Post,
     cs: &Vec<Comment>,
     user: &CurrentUser,
-    kws: &Vec<&str>,
 ) -> Vec<CommentOutput> {
     let mut hash2id = HashMap::<&String, i32>::from([(&p.author_hash, 0)]);
     cs.iter()
@@ -55,13 +54,9 @@ pub fn c2output<'r>(
                 // TODO: block
                 None
             } else {
-                let mut text = c.content.to_string();
-                for kw in kws {
-                    text = text.replace(kw, &format!(" **{}**", kw));
-                }
                 Some(CommentOutput {
                     cid: c.id,
-                    text: format!("{}{}", if c.is_tmp { "[tmp]\n" } else { "" }, text),
+                    text: format!("{}{}", if c.is_tmp { "[tmp]\n" } else { "" }, c.content),
                     author_title: c.author_title.to_string(),
                     can_del: c.check_permission(user, "wd").is_ok(),
                     name_id: name_id,
@@ -82,7 +77,7 @@ pub async fn get_comment(pid: i32, user: CurrentUser, db: Db, rconn: RdsConn) ->
     }
     let pid = p.id;
     let cs = Comment::gets_by_post_id(&db, pid).await?;
-    let data = c2output(&p, &cs, &user, &vec![]);
+    let data = c2output(&p, &cs, &user);
 
     Ok(json!({
         "code": 0,

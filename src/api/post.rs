@@ -54,16 +54,10 @@ async fn p2output(
     user: &CurrentUser,
     db: &Db,
     rconn: &RdsConn,
-    kws: &Vec<&str>,
 ) -> PostOutput {
-    let mut text = p.content.to_string();
-    for kw in kws {
-        text = text.replace(kw, &format!(" **{}**", kw));
-    }
-
     PostOutput {
         pid: p.id,
-        text: format!("{}{}", if p.is_tmp { "[tmp]\n" } else { "" }, text),
+        text: format!("{}{}", if p.is_tmp { "[tmp]\n" } else { "" }, p.content),
         cw: if p.cw.len() > 0 {
             Some(p.cw.to_string())
         } else {
@@ -91,7 +85,7 @@ async fn p2output(
             // 单个洞还有查询评论的接口，这里挂了不用报错
             let pid = p.id;
             if let Some(cs) = Comment::gets_by_post_id(db, pid).await.ok() {
-                Some(c2output(p, &cs, user, kws))
+                Some(c2output(p, &cs, user))
             } else {
                 None
             }
@@ -113,11 +107,10 @@ pub async fn ps2outputs(
     user: &CurrentUser,
     db: &Db,
     rconn: &RdsConn,
-    kws: &Vec<&str>,
 ) -> Vec<PostOutput> {
     future::join_all(
         ps.iter()
-            .map(|p| async { p2output(p, &user, &db, &rconn, &kws.clone()).await }),
+            .map(|p| async { p2output(p, &user, &db, &rconn).await }),
     )
     .await
 }
@@ -128,7 +121,7 @@ pub async fn get_one(pid: i32, user: CurrentUser, db: Db, rconn: RdsConn) -> Jso
     let p = Post::get_with_cache(&db, &rconn, pid).await?;
     p.check_permission(&user, "ro")?;
     Ok(json!({
-        "data": p2output(&p, &user,&db, &rconn, &vec![]).await,
+        "data": p2output(&p, &user,&db, &rconn).await,
         "code": 0,
     }))
 }
@@ -145,7 +138,7 @@ pub async fn get_list(
     let page_size = 25;
     let start = (page - 1) * page_size;
     let ps = Post::gets_by_page(&db, order_mode, start.into(), page_size.into()).await?;
-    let ps_data = ps2outputs(&ps, &user, &db, &rconn, &vec![]).await;
+    let ps_data = ps2outputs(&ps, &user, &db, &rconn).await;
     Ok(json!({
         "data": ps_data,
         "count": ps_data.len(),
@@ -193,7 +186,7 @@ pub async fn edit_cw(cwi: Form<CwInput>, user: CurrentUser, db: Db) -> JsonAPI {
 #[get("/getmulti?<pids>")]
 pub async fn get_multi(pids: Vec<i32>, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonAPI {
     let ps = Post::get_multi(&db, pids).await?;
-    let ps_data = ps2outputs(&ps, &user, &db, &rconn, &vec![]).await;
+    let ps_data = ps2outputs(&ps, &user, &db, &rconn).await;
 
     Ok(json!({
         "code": 0,

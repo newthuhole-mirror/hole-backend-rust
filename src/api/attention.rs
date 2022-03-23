@@ -53,7 +53,7 @@ pub async fn attention_post(
 pub async fn get_attention(user: CurrentUser, db: Db, rconn: RdsConn) -> API<Value> {
     let ids = Attention::init(&user.namehash, &rconn).all().await?;
     let ps = Post::get_multi(&db, ids).await?;
-    let ps_data = ps2outputs(&ps, &user, &db, &rconn, &vec![]).await;
+    let ps_data = ps2outputs(&ps, &user, &db, &rconn).await;
 
     Ok(json!({
         "code": 0,
