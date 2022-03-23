@@ -177,8 +177,7 @@ impl Post {
             let pat;
             let mut query = base_query!(posts)
                 .distinct()
-                .left_join(comments::table)
-                .filter(comments::is_deleted.eq(false));
+                .left_join(comments::table);
             // 先用搜索+缓存，性能有问题了再真的做tag表
             query = match search_mode {
                 0 => {
@@ -187,7 +186,7 @@ impl Post {
                         .filter(posts::cw.eq(&search_text))
                         .or_filter(posts::cw.eq(format!("#{}", &search_text)))
                         .or_filter(posts::content.like(&pat))
-                        .or_filter(comments::content.like(&pat))
+                        .or_filter(comments::content.like(&pat).and(comments::is_deleted.eq(false)))
                 }
                 1 => {
                     pat = format!("%{}%", search_text2.replace(" ", "%"));

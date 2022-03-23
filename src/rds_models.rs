@@ -65,7 +65,7 @@ impl PostCache {
     pub async fn get(&mut self) -> Option<Post> {
         let rds_result = self.rconn.get::<&String, String>(&self.key).await;
         if let Ok(s) = rds_result {
-            debug!("hint post cache: {}", &s);
+            debug!("hint post cache");
             self.rconn
                 .expire::<&String, bool>(&self.key, INSTANCE_EXPIRE_TIME)
                 .await
