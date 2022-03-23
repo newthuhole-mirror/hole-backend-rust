@@ -1,17 +1,19 @@
 #![allow(clippy::all)]
 
+use crate::cache::{PostCache, UserCache};
 use crate::db_conn::Db;
 use crate::libs::diesel_logger::LoggingConnection;
 use crate::rds_conn::RdsConn;
-use crate::cache::{PostCache, UserCache};
 use crate::schema::*;
 use chrono::{offset::Utc, DateTime};
+use diesel::dsl::any;
 use diesel::{
     insert_into, BoolExpressionMethods, ExpressionMethods, QueryDsl, QueryResult, RunQueryDsl,
     TextExpressionMethods,
 };
-use diesel::dsl::any;
 use rocket::serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::convert::identity;
 
 no_arg_sql_function!(RANDOM, (), "Represents the sql RANDOM() function");
 
@@ -28,12 +30,14 @@ macro_rules! get {
 macro_rules! get_multi {
     ($table:ident) => {
         pub async fn get_multi(db: &Db, ids: Vec<i32>) -> QueryResult<Vec<Self>> {
+            if ids.is_empty() {
+                return Ok(vec![]);
+            }
             // eq(any()) is only for postgres
             db.run(move |c| {
                 $table::table
                     .filter($table::id.eq(any(ids)))
                     .filter($table::is_deleted.eq(false))
-                    .order($table::id.desc())
                     .load(with_log!(c))
             })
             .await
@@ -83,7 +87,7 @@ pub struct Comment {
     pub post_id: i32,
 }
 
-#[derive(Queryable, Insertable, Serialize, Deserialize)]
+#[derive(Queryable, Insertable, Serialize, Deserialize, Debug)]
 #[serde(crate = "rocket::serde")]
 pub struct Post {
     pub id: i32,
@@ -131,15 +135,52 @@ impl Post {
 
     set_deleted!(posts);
 
-    pub async fn get_with_cache(db: &Db, rconn: &RdsConn, id: i32) -> QueryResult<Self> {
-        let mut cacher = PostCache::init(&id, &rconn);
-        if let Some(p) = cacher.get().await {
-            Ok(p)
-        } else {
-            let p = Self::get(db, id).await?;
-            cacher.set(&p).await;
-            Ok(p)
+    pub async fn get_multi_with_cache(
+        db: &Db,
+        rconn: &RdsConn,
+        ids: &Vec<i32>,
+    ) -> QueryResult<Vec<Self>> {
+        let mut cacher = PostCache::init(&rconn);
+        let mut cached_posts = cacher.gets(ids).await;
+        let mut id2po = HashMap::<i32, &mut Option<Post>>::new();
+
+        // dbg!(&cached_posts);
+
+        let missing_ids = ids
+            .iter()
+            .zip(cached_posts.iter_mut())
+            .filter_map(|(pid, p)| match p {
+                None => {
+                    id2po.insert(pid.clone(), p);
+                    Some(pid)
+                },
+                _ => None,
+            })
+            .copied()
+            .collect();
+
+        dbg!(&missing_ids);
+        let missing_ps = Self::get_multi(db, missing_ids).await?;
+        // dbg!(&missing_ps);
+        
+        cacher.sets(&missing_ps.iter().map(identity).collect()).await;
+
+        for p in missing_ps.into_iter() {
+            if let Some(op) = id2po.get_mut(&p.id) {
+                **op = Some(p);
+            }
         }
+        // dbg!(&cached_posts);
+        Ok(
+            cached_posts.into_iter().filter_map(identity).collect()
+        )
+    }
+
+    pub async fn get_with_cache(db: &Db, rconn: &RdsConn, id: i32) -> QueryResult<Self> {
+        Self::get_multi_with_cache(db, rconn, &vec![id])
+            .await?
+            .pop()
+            .ok_or(diesel::result::Error::NotFound)
     }
 
     pub async fn gets_by_page(
@@ -177,9 +218,7 @@ impl Post {
         let search_text2 = search_text.replace("%", "\\%");
         db.run(move |c| {
             let pat;
-            let mut query = base_query!(posts)
-                .distinct()
-                .left_join(comments::table);
+            let mut query = base_query!(posts).distinct().left_join(comments::table);
             // 先用搜索+缓存，性能有问题了再真的做tag表
             query = match search_mode {
                 0 => {
@@ -188,7 +227,11 @@ impl Post {
                         .filter(posts::cw.eq(&search_text))
                         .or_filter(posts::cw.eq(format!("#{}", &search_text)))
                         .or_filter(posts::content.like(&pat))
-                        .or_filter(comments::content.like(&pat).and(comments::is_deleted.eq(false)))
+                        .or_filter(
+                            comments::content
+                                .like(&pat)
+                                .and(comments::is_deleted.eq(false)),
+                        )
                 }
                 1 => {
                     pat = format!("%{}%", search_text2.replace(" ", "%"));
@@ -262,7 +305,7 @@ impl Post {
     }
 
     pub async fn set_instance_cache(&self, rconn: &RdsConn) {
-        PostCache::init(&self.id, rconn).set(self).await;
+        PostCache::init(rconn).sets(&vec![self]).await;
     }
     pub async fn refresh_cache(&self, rconn: &RdsConn, is_new: bool) {
         self.set_instance_cache(rconn).await;

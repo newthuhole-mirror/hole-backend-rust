@@ -36,6 +36,7 @@ pub struct PostOutput {
     comments: Option<Vec<CommentOutput>>,
     can_del: bool,
     attention: bool,
+    hot_score: Option<i32>,
     // for old version frontend
     timestamp: i64,
     likenum: i32,
@@ -95,6 +96,7 @@ async fn p2output(
             .has(p.id)
             .await
             .unwrap_or_default(),
+        hot_score: if user.is_admin { Some(p.hot_score) } else { None },
         // for old version frontend
         timestamp: p.create_time.timestamp(),
         likenum: p.n_attentions,
@@ -185,7 +187,7 @@ pub async fn edit_cw(cwi: Form<CwInput>, user: CurrentUser, db: Db) -> JsonAPI {
 
 #[get("/getmulti?<pids>")]
 pub async fn get_multi(pids: Vec<i32>, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonAPI {
-    let ps = Post::get_multi(&db, pids).await?;
+    let ps = Post::get_multi_with_cache(&db, &rconn, &pids).await?;
     let ps_data = ps2outputs(&ps, &user, &db, &rconn).await;
 
     Ok(json!({
