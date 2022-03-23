@@ -14,6 +14,7 @@ mod models;
 mod random_hasher;
 mod rds_conn;
 mod rds_models;
+mod cache;
 mod schema;
 
 use db_conn::Db;

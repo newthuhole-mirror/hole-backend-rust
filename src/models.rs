@@ -3,13 +3,14 @@
 use crate::db_conn::Db;
 use crate::libs::diesel_logger::LoggingConnection;
 use crate::rds_conn::RdsConn;
-use crate::rds_models::PostCache;
+use crate::cache::{PostCache, UserCache};
 use crate::schema::*;
 use chrono::{offset::Utc, DateTime};
 use diesel::{
     insert_into, BoolExpressionMethods, ExpressionMethods, QueryDsl, QueryResult, RunQueryDsl,
     TextExpressionMethods,
 };
+use diesel::dsl::any;
 use rocket::serde::{Deserialize, Serialize};
 
 no_arg_sql_function!(RANDOM, (), "Represents the sql RANDOM() function");
@@ -27,10 +28,10 @@ macro_rules! get {
 macro_rules! get_multi {
     ($table:ident) => {
         pub async fn get_multi(db: &Db, ids: Vec<i32>) -> QueryResult<Vec<Self>> {
-            // can use eq(any()) for postgres
+            // eq(any()) is only for postgres
             db.run(move |c| {
                 $table::table
-                    .filter($table::id.eq_any(ids))
+                    .filter($table::id.eq(any(ids)))
                     .filter($table::is_deleted.eq(false))
                     .order($table::id.desc())
                     .load(with_log!(c))
@@ -68,7 +69,8 @@ macro_rules! with_log {
     };
 }
 
-#[derive(Queryable, Insertable)]
+#[derive(Queryable, Insertable, Serialize, Deserialize)]
+#[serde(crate = "rocket::serde")]
 pub struct Comment {
     pub id: i32,
     pub author_hash: String,
@@ -100,7 +102,8 @@ pub struct Post {
     pub allow_search: bool,
 }
 
-#[derive(Queryable, Insertable)]
+#[derive(Queryable, Insertable, Serialize, Deserialize)]
+#[serde(crate = "rocket::serde")]
 pub struct User {
     pub id: i32,
     pub name: String,
@@ -131,7 +134,6 @@ impl Post {
     pub async fn get_with_cache(db: &Db, rconn: &RdsConn, id: i32) -> QueryResult<Self> {
         let mut cacher = PostCache::init(&id, &rconn);
         if let Some(p) = cacher.get().await {
-            dbg!("hint and use post cache");
             Ok(p)
         } else {
             let p = Self::get(db, id).await?;
@@ -277,6 +279,17 @@ impl User {
         })
         .await
         .ok()
+    }
+
+    pub async fn get_by_token_with_cache(db: &Db, rconn: &RdsConn, token: &str) -> Option<Self> {
+        let mut cacher = UserCache::init(token, &rconn);
+        if let Some(u) = cacher.get().await {
+            Some(u)
+        } else {
+            let u = Self::get_by_token(db, token).await?;
+            cacher.set(&u).await;
+            Some(u)
+        }
     }
 }
 

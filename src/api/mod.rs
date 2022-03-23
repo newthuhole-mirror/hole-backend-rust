@@ -1,6 +1,7 @@
 use crate::db_conn::Db;
 use crate::models::*;
 use crate::random_hasher::RandomHasher;
+use crate::rds_conn::RdsConn;
 use rocket::http::Status;
 use rocket::outcome::try_outcome;
 use rocket::request::{FromRequest, Outcome, Request};
@@ -38,7 +39,8 @@ impl<'r> FromRequest<'r> for CurrentUser {
                 });
             } else {
                 let db = try_outcome!(request.guard::<Db>().await);
-                if let Some(user) = User::get_by_token(&db, token).await {
+                let rconn = try_outcome!(request.guard::<RdsConn>().await);
+                if let Some(user) = User::get_by_token_with_cache(&db, &rconn, token).await {
                     let namehash = rh.hash_with_salt(&user.name);
                     cu = Some(CurrentUser {
                         id: Some(user.id),
