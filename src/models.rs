@@ -1,6 +1,7 @@
 #![allow(clippy::all)]
 
 use crate::db_conn::Db;
+use crate::libs::diesel_logger::LoggingConnection;
 use crate::rds_conn::RdsConn;
 use crate::rds_models::PostCache;
 use crate::schema::*;
@@ -17,7 +18,8 @@ macro_rules! get {
     ($table:ident) => {
         pub async fn get(db: &Db, id: i32) -> QueryResult<Self> {
             let pid = id;
-            db.run(move |c| $table::table.find(pid).first(c)).await
+            db.run(move |c| $table::table.find(pid).first(with_log!((c))))
+                .await
         }
     };
 }
@@ -31,7 +33,7 @@ macro_rules! get_multi {
                     .filter($table::id.eq_any(ids))
                     .filter($table::is_deleted.eq(false))
                     .order($table::id.desc())
-                    .load(c)
+                    .load(with_log!(c))
             })
             .await
         }
@@ -45,7 +47,7 @@ macro_rules! set_deleted {
             db.run(move |c| {
                 diesel::update($table::table.find(pid))
                     .set($table::is_deleted.eq(true))
-                    .execute(c)
+                    .execute(with_log!(c))
             })
             .await
         }
@@ -57,6 +59,12 @@ macro_rules! base_query {
         $table::table
             .into_boxed()
             .filter($table::is_deleted.eq(false))
+    };
+}
+
+macro_rules! with_log {
+    ($c: expr) => {
+        &LoggingConnection::new($c)
     };
 }
 
@@ -152,7 +160,7 @@ impl Post {
                 _ => panic!("Wrong order mode!"),
             };
 
-            query.offset(start).limit(limit).load(c)
+            query.offset(start).limit(limit).load(with_log!(c))
         })
         .await
     }
@@ -197,15 +205,19 @@ impl Post {
                 .order(posts::id.desc())
                 .offset(start)
                 .limit(limit)
-                .load(c)
+                .load(with_log!(c))
         })
         .await
     }
 
     pub async fn create(db: &Db, new_post: NewPost) -> QueryResult<Self> {
         // TODO: tags
-        db.run(move |c| insert_into(posts::table).values(&new_post).get_result(c))
-            .await
+        db.run(move |c| {
+            insert_into(posts::table)
+                .values(&new_post)
+                .get_result(with_log!(c))
+        })
+        .await
     }
 
     pub async fn update_cw(&self, db: &Db, new_cw: String) -> QueryResult<usize> {
@@ -213,7 +225,7 @@ impl Post {
         db.run(move |c| {
             diesel::update(posts::table.find(pid))
                 .set(posts::cw.eq(new_cw))
-                .execute(c)
+                .execute(with_log!(c))
         })
         .await
     }
@@ -223,7 +235,7 @@ impl Post {
         db.run(move |c| {
             diesel::update(posts::table.find(pid))
                 .set(posts::n_comments.eq(posts::n_comments + delta))
-                .get_result(c)
+                .get_result(with_log!(c))
         })
         .await
     }
@@ -233,7 +245,7 @@ impl Post {
         db.run(move |c| {
             diesel::update(posts::table.find(pid))
                 .set(posts::n_attentions.eq(posts::n_attentions + delta))
-                .get_result(c)
+                .get_result(with_log!(c))
         })
         .await
     }
@@ -243,7 +255,7 @@ impl Post {
         db.run(move |c| {
             diesel::update(posts::table.find(pid))
                 .set(posts::hot_score.eq(posts::hot_score + delta))
-                .get_result(c)
+                .get_result(with_log!(c))
         })
         .await
     }
@@ -259,9 +271,13 @@ impl Post {
 impl User {
     pub async fn get_by_token(db: &Db, token: &str) -> Option<Self> {
         let token = token.to_string();
-        db.run(move |c| users::table.filter(users::token.eq(token)).first(c))
-            .await
-            .ok()
+        db.run(move |c| {
+            users::table
+                .filter(users::token.eq(token))
+                .first(with_log!(c))
+        })
+        .await
+        .ok()
     }
 }
 
@@ -284,7 +300,7 @@ impl Comment {
         db.run(move |c| {
             insert_into(comments::table)
                 .values(&new_comment)
-                .get_result(c)
+                .get_result(with_log!(c))
         })
         .await
     }
@@ -295,7 +311,7 @@ impl Comment {
             comments::table
                 .filter(comments::post_id.eq(pid))
                 .order(comments::id)
-                .load(c)
+                .load(with_log!(c))
         })
         .await
     }

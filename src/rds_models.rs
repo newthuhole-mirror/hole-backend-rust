@@ -58,23 +58,26 @@ impl PostCache {
             )
             .await
             .unwrap_or_else(|e| {
-                dbg!("set post cache failed", e, p.id);
+                warn!("set post cache failed: {}, {}", e, p.id);
             })
     }
 
     pub async fn get(&mut self) -> Option<Post> {
         let rds_result = self.rconn.get::<&String, String>(&self.key).await;
         if let Ok(s) = rds_result {
-            dbg!("hint post cache", &s);
+            debug!("hint post cache: {}", &s);
             self.rconn
                 .expire::<&String, bool>(&self.key, INSTANCE_EXPIRE_TIME)
                 .await
                 .unwrap_or_else(|e| {
-                    dbg!("get post cache, set new expire failed", e, &self.key, &s);
+                    warn!(
+                        "get post cache, set new expire failed: {}, {}, {} ",
+                        e, &self.key, &s
+                    );
                     false
                 });
             serde_json::from_str(&s).unwrap_or_else(|e| {
-                dbg!("get post cache failed", e, s);
+                warn!("get post cache, decode failed {}, {}", e, s);
                 None
             })
         } else {
