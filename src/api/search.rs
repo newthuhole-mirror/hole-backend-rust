@@ -26,6 +26,7 @@ pub async fn search(
     } else {
         Post::search(
             &db,
+            &rconn,
             search_mode,
             keywords.to_string(),
             start.into(),

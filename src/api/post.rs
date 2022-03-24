@@ -67,7 +67,10 @@ async fn p2output(p: &Post, user: &CurrentUser, db: &Db, rconn: &RdsConn) -> Pos
             None
         } else {
             // 单个洞还有查询评论的接口，这里挂了不用报错
-            p.get_comments(db, rconn).await.ok().map(|cs| c2output(p, &cs, user))
+            p.get_comments(db, rconn)
+                .await
+                .ok()
+                .map(|cs| c2output(p, &cs, user))
         },
         can_del: p.check_permission(user, "wd").is_ok(),
         attention: Attention::init(&user.namehash, &rconn)
@@ -117,7 +120,7 @@ pub async fn get_list(
     let page = p.unwrap_or(1);
     let page_size = 25;
     let start = (page - 1) * page_size;
-    let ps = Post::gets_by_page(&db, order_mode, start.into(), page_size.into()).await?;
+    let ps = Post::gets_by_page(&db, &rconn, order_mode, start.into(), page_size.into()).await?;
     let ps_data = ps2outputs(&ps, &user, &db, &rconn).await;
     Ok(json!({
         "data": ps_data,
@@ -147,6 +150,7 @@ pub async fn publish_post(
     )
     .await?;
     Attention::init(&user.namehash, &rconn).add(p.id).await?;
+    p.refresh_cache(&rconn, true).await;
     Ok(json!({
         "code": 0
     }))

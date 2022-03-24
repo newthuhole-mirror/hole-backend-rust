@@ -38,7 +38,8 @@ pub async fn delete(
         _ => return Err(APIError::PcError(NotAllowed)),
     }
 
-    p.refresh_cache(&rconn, false).await;
+    // 如果是删除，需要也从0号缓存队列中去掉
+    p.refresh_cache(&rconn, true).await;
 
     Ok(json!({
         "code": 0

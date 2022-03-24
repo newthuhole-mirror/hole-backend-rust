@@ -92,7 +92,7 @@ pub async fn add_comment(
     rconn: RdsConn,
 ) -> API<Value> {
     let mut p = Post::get(&db, &rconn, ci.pid).await?;
-    Comment::create(
+    let c = Comment::create(
         &db,
         NewComment {
             content: ci.text.to_string(),
@@ -104,6 +104,7 @@ pub async fn add_comment(
     )
     .await?;
     p.change_n_comments(&db, 1).await?;
+    p.update_comment_time(&db, c.create_time).await?;
     // auto attention after comment
     let mut att = Attention::init(&user.namehash, &rconn);
 

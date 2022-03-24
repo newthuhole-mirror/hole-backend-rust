@@ -1,6 +1,6 @@
 #![allow(clippy::all)]
 
-use crate::cache::{PostCache, PostCommentCache, UserCache};
+use crate::cache::*;
 use crate::db_conn::Db;
 use crate::libs::diesel_logger::LoggingConnection;
 use crate::rds_conn::RdsConn;
@@ -11,6 +11,7 @@ use diesel::{
     insert_into, BoolExpressionMethods, ExpressionMethods, QueryDsl, QueryResult, RunQueryDsl,
     TextExpressionMethods,
 };
+use rocket::futures::{future, join};
 use rocket::serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::convert::identity;
@@ -191,11 +192,7 @@ impl Post {
         }
     }
 
-    pub async fn get_comments(
-        &self,
-        db: &Db,
-        rconn: &RdsConn,
-    ) -> QueryResult<Vec<Comment>> {
+    pub async fn get_comments(&self, db: &Db, rconn: &RdsConn) -> QueryResult<Vec<Comment>> {
         let mut cacher = PostCommentCache::init(self.id, rconn);
         if let Some(cs) = cacher.get().await {
             Ok(cs)
@@ -212,12 +209,34 @@ impl Post {
 
     pub async fn gets_by_page(
         db: &Db,
+        rconn: &RdsConn,
         order_mode: u8,
         start: i64,
         limit: i64,
     ) -> QueryResult<Vec<Self>> {
+        let mut cacher = PostListCommentCache::init(order_mode, &rconn).await;
+        if cacher.need_fill() {
+            let pids =
+                Self::_get_ids_by_page(db, order_mode.clone(), 0, cacher.i64_minlen()).await?;
+            let ps = Self::get_multi(db, rconn, &pids).await?;
+            cacher.fill(&ps).await;
+        }
+        let pids = if start + limit > cacher.i64_len() {
+            Self::_get_ids_by_page(db, order_mode, start, limit).await?
+        } else {
+            cacher.get_pids(start, limit).await
+        };
+
+        Self::get_multi(db, rconn, &pids).await
+    }
+    async fn _get_ids_by_page(
+        db: &Db,
+        order_mode: u8,
+        start: i64,
+        limit: i64,
+    ) -> QueryResult<Vec<i32>> {
         db.run(move |c| {
-            let mut query = base_query!(posts);
+            let mut query = base_query!(posts).select(posts::id);
             if order_mode > 0 {
                 query = query.filter(posts::is_reported.eq(false))
             }
@@ -237,48 +256,54 @@ impl Post {
 
     pub async fn search(
         db: &Db,
+        rconn: &RdsConn,
         search_mode: u8,
         search_text: String,
         start: i64,
         limit: i64,
     ) -> QueryResult<Vec<Self>> {
         let search_text2 = search_text.replace("%", "\\%");
-        db.run(move |c| {
-            let pat;
-            let mut query = base_query!(posts).distinct().left_join(comments::table);
-            // 先用搜索+缓存，性能有问题了再真的做tag表
-            query = match search_mode {
-                0 => {
-                    pat = format!("%#{}%", &search_text2);
-                    query
-                        .filter(posts::cw.eq(&search_text))
-                        .or_filter(posts::cw.eq(format!("#{}", &search_text)))
-                        .or_filter(posts::content.like(&pat))
-                        .or_filter(
-                            comments::content
-                                .like(&pat)
-                                .and(comments::is_deleted.eq(false)),
-                        )
-                }
-                1 => {
-                    pat = format!("%{}%", search_text2.replace(" ", "%"));
-                    query
-                        .filter(posts::content.like(&pat).or(comments::content.like(&pat)))
-                        .filter(posts::allow_search.eq(true))
-                }
-                2 => query
-                    .filter(posts::author_title.eq(&search_text))
-                    .or_filter(comments::author_title.eq(&search_text)),
-                _ => panic!("Wrong search mode!"),
-            };
+        let pids = db
+            .run(move |c| {
+                let pat;
+                let mut query = base_query!(posts)
+                    .select(posts::id)
+                    .distinct()
+                    .left_join(comments::table);
+                // 先用搜索+缓存，性能有问题了再真的做tag表
+                query = match search_mode {
+                    0 => {
+                        pat = format!("%#{}%", &search_text2);
+                        query
+                            .filter(posts::cw.eq(&search_text))
+                            .or_filter(posts::cw.eq(format!("#{}", &search_text)))
+                            .or_filter(posts::content.like(&pat))
+                            .or_filter(
+                                comments::content
+                                    .like(&pat)
+                                    .and(comments::is_deleted.eq(false)),
+                            )
+                    }
+                    1 => {
+                        pat = format!("%{}%", search_text2.replace(" ", "%"));
+                        query
+                            .filter(posts::content.like(&pat).or(comments::content.like(&pat)))
+                            .filter(posts::allow_search.eq(true))
+                    }
+                    2 => query
+                        .filter(posts::author_title.eq(&search_text))
+                        .or_filter(comments::author_title.eq(&search_text)),
+                    _ => panic!("Wrong search mode!"),
+                };
 
-            query
-                .order(posts::id.desc())
-                .offset(start)
-                .limit(limit)
-                .load(with_log!(c))
-        })
-        .await
+                query
+                    .order(posts::id.desc())
+                    .offset(start)
+                    .limit(limit)
+                    .load(with_log!(c))
+            })
+            .await?;
+        Self::get_multi(db, rconn, &pids).await
     }
 
     pub async fn create(db: &Db, new_post: NewPost) -> QueryResult<Self> {
@@ -297,6 +322,18 @@ impl Post {
             .run(move |c| {
                 diesel::update(posts::table.find(pid))
                     .set(posts::cw.eq(new_cw))
+                    .get_result(with_log!(c))
+            })
+            .await?;
+        Ok(())
+    }
+
+    pub async fn update_comment_time(&mut self, db: &Db, t: DateTime<Utc>) -> QueryResult<()> {
+        let pid = self.id;
+        *self = db
+            .run(move |c| {
+                diesel::update(posts::table.find(pid))
+                    .set(posts::last_comment_time.eq(t))
                     .get_result(with_log!(c))
             })
             .await?;
@@ -343,7 +380,15 @@ impl Post {
         PostCache::init(rconn).sets(&vec![self]).await;
     }
     pub async fn refresh_cache(&self, rconn: &RdsConn, is_new: bool) {
-        self.set_instance_cache(rconn).await;
+        join!(
+            self.set_instance_cache(rconn),
+            future::join_all((if is_new { 0..4 } else { 1..4 }).map(|mode| async move {
+                PostListCommentCache::init(mode, &rconn.clone())
+                    .await
+                    .put(self)
+                    .await
+            })),
+        );
     }
 }
 
