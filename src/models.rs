@@ -1,6 +1,6 @@
 #![allow(clippy::all)]
 
-use crate::cache::{PostCache, UserCache};
+use crate::cache::{PostCache, PostCommentCache, UserCache};
 use crate::db_conn::Db;
 use crate::libs::diesel_logger::LoggingConnection;
 use crate::rds_conn::RdsConn;
@@ -17,9 +17,9 @@ use std::convert::identity;
 
 no_arg_sql_function!(RANDOM, (), "Represents the sql RANDOM() function");
 
-macro_rules! get {
+macro_rules! _get {
     ($table:ident) => {
-        pub async fn get(db: &Db, id: i32) -> QueryResult<Self> {
+        async fn _get(db: &Db, id: i32) -> QueryResult<Self> {
             let pid = id;
             db.run(move |c| $table::table.find(pid).first(with_log!((c))))
                 .await
@@ -27,9 +27,9 @@ macro_rules! get {
     };
 }
 
-macro_rules! get_multi {
+macro_rules! _get_multi {
     ($table:ident) => {
-        pub async fn get_multi(db: &Db, ids: Vec<i32>) -> QueryResult<Vec<Self>> {
+        async fn _get_multi(db: &Db, ids: Vec<i32>) -> QueryResult<Vec<Self>> {
             if ids.is_empty() {
                 return Ok(vec![]);
             }
@@ -47,14 +47,16 @@ macro_rules! get_multi {
 
 macro_rules! set_deleted {
     ($table:ident) => {
-        pub async fn set_deleted(&self, db: &Db) -> QueryResult<usize> {
-            let pid = self.id;
-            db.run(move |c| {
-                diesel::update($table::table.find(pid))
-                    .set($table::is_deleted.eq(true))
-                    .execute(with_log!(c))
-            })
-            .await
+        pub async fn set_deleted(&mut self, db: &Db) -> QueryResult<()> {
+            let id = self.id;
+            *self = db
+                .run(move |c| {
+                    diesel::update($table::table.find(id))
+                        .set($table::is_deleted.eq(true))
+                        .get_result(with_log!(c))
+                })
+                .await?;
+            Ok(())
         }
     };
 }
@@ -73,7 +75,7 @@ macro_rules! with_log {
     };
 }
 
-#[derive(Queryable, Insertable, Serialize, Deserialize)]
+#[derive(Queryable, Insertable, Serialize, Deserialize, Debug)]
 #[serde(crate = "rocket::serde")]
 pub struct Comment {
     pub id: i32,
@@ -106,7 +108,7 @@ pub struct Post {
     pub allow_search: bool,
 }
 
-#[derive(Queryable, Insertable, Serialize, Deserialize)]
+#[derive(Queryable, Insertable, Serialize, Deserialize, Debug)]
 #[serde(crate = "rocket::serde")]
 pub struct User {
     pub id: i32,
@@ -129,17 +131,13 @@ pub struct NewPost {
 }
 
 impl Post {
-    get!(posts);
+    _get!(posts);
 
-    get_multi!(posts);
+    _get_multi!(posts);
 
     set_deleted!(posts);
 
-    pub async fn get_multi_with_cache(
-        db: &Db,
-        rconn: &RdsConn,
-        ids: &Vec<i32>,
-    ) -> QueryResult<Vec<Self>> {
+    pub async fn get_multi(db: &Db, rconn: &RdsConn, ids: &Vec<i32>) -> QueryResult<Vec<Self>> {
         let mut cacher = PostCache::init(&rconn);
         let mut cached_posts = cacher.gets(ids).await;
         let mut id2po = HashMap::<i32, &mut Option<Post>>::new();
@@ -153,17 +151,19 @@ impl Post {
                 None => {
                     id2po.insert(pid.clone(), p);
                     Some(pid)
-                },
+                }
                 _ => None,
             })
             .copied()
             .collect();
 
-        dbg!(&missing_ids);
-        let missing_ps = Self::get_multi(db, missing_ids).await?;
+        // dbg!(&missing_ids);
+        let missing_ps = Self::_get_multi(db, missing_ids).await?;
         // dbg!(&missing_ps);
-        
-        cacher.sets(&missing_ps.iter().map(identity).collect()).await;
+
+        cacher
+            .sets(&missing_ps.iter().map(identity).collect())
+            .await;
 
         for p in missing_ps.into_iter() {
             if let Some(op) = id2po.get_mut(&p.id) {
@@ -171,16 +171,43 @@ impl Post {
             }
         }
         // dbg!(&cached_posts);
-        Ok(
-            cached_posts.into_iter().filter_map(identity).collect()
-        )
+        Ok(cached_posts
+            .into_iter()
+            .filter_map(|p| p.filter(|p| !p.is_deleted))
+            .collect())
     }
 
-    pub async fn get_with_cache(db: &Db, rconn: &RdsConn, id: i32) -> QueryResult<Self> {
-        Self::get_multi_with_cache(db, rconn, &vec![id])
-            .await?
-            .pop()
-            .ok_or(diesel::result::Error::NotFound)
+    pub async fn get(db: &Db, rconn: &RdsConn, id: i32) -> QueryResult<Self> {
+        let mut cacher = PostCache::init(&rconn);
+        if let Some(p) = cacher.get(&id).await {
+            if p.is_deleted {
+                return Err(diesel::result::Error::NotFound);
+            }
+            Ok(p)
+        } else {
+            let p = Self::_get(db, id).await?;
+            cacher.sets(&vec![&p]).await;
+            Ok(p)
+        }
+    }
+
+    pub async fn get_comments(
+        &self,
+        db: &Db,
+        rconn: &RdsConn,
+    ) -> QueryResult<Vec<Comment>> {
+        let mut cacher = PostCommentCache::init(self.id, rconn);
+        if let Some(cs) = cacher.get().await {
+            Ok(cs)
+        } else {
+            let cs = Comment::gets_by_post_id(db, self.id).await?;
+            cacher.set(&cs).await;
+            Ok(cs)
+        }
+    }
+
+    pub async fn clear_comments_cache(&self, rconn: &RdsConn) {
+        PostCommentCache::init(self.id, rconn).clear().await;
     }
 
     pub async fn gets_by_page(
@@ -264,44 +291,52 @@ impl Post {
         .await
     }
 
-    pub async fn update_cw(&self, db: &Db, new_cw: String) -> QueryResult<usize> {
+    pub async fn update_cw(&mut self, db: &Db, new_cw: String) -> QueryResult<()> {
         let pid = self.id;
-        db.run(move |c| {
-            diesel::update(posts::table.find(pid))
-                .set(posts::cw.eq(new_cw))
-                .execute(with_log!(c))
-        })
-        .await
+        *self = db
+            .run(move |c| {
+                diesel::update(posts::table.find(pid))
+                    .set(posts::cw.eq(new_cw))
+                    .get_result(with_log!(c))
+            })
+            .await?;
+        Ok(())
     }
 
-    pub async fn change_n_comments(&self, db: &Db, delta: i32) -> QueryResult<Self> {
+    pub async fn change_n_comments(&mut self, db: &Db, delta: i32) -> QueryResult<()> {
         let pid = self.id;
-        db.run(move |c| {
-            diesel::update(posts::table.find(pid))
-                .set(posts::n_comments.eq(posts::n_comments + delta))
-                .get_result(with_log!(c))
-        })
-        .await
+        *self = db
+            .run(move |c| {
+                diesel::update(posts::table.find(pid))
+                    .set(posts::n_comments.eq(posts::n_comments + delta))
+                    .get_result(with_log!(c))
+            })
+            .await?;
+        Ok(())
     }
 
-    pub async fn change_n_attentions(&self, db: &Db, delta: i32) -> QueryResult<Self> {
+    pub async fn change_n_attentions(&mut self, db: &Db, delta: i32) -> QueryResult<()> {
         let pid = self.id;
-        db.run(move |c| {
-            diesel::update(posts::table.find(pid))
-                .set(posts::n_attentions.eq(posts::n_attentions + delta))
-                .get_result(with_log!(c))
-        })
-        .await
+        *self = db
+            .run(move |c| {
+                diesel::update(posts::table.find(pid))
+                    .set(posts::n_attentions.eq(posts::n_attentions + delta))
+                    .get_result(with_log!(c))
+            })
+            .await?;
+        Ok(())
     }
 
-    pub async fn change_hot_score(&self, db: &Db, delta: i32) -> QueryResult<Self> {
+    pub async fn change_hot_score(&mut self, db: &Db, delta: i32) -> QueryResult<()> {
         let pid = self.id;
-        db.run(move |c| {
-            diesel::update(posts::table.find(pid))
-                .set(posts::hot_score.eq(posts::hot_score + delta))
-                .get_result(with_log!(c))
-        })
-        .await
+        *self = db
+            .run(move |c| {
+                diesel::update(posts::table.find(pid))
+                    .set(posts::hot_score.eq(posts::hot_score + delta))
+                    .get_result(with_log!(c))
+            })
+            .await?;
+        Ok(())
     }
 
     pub async fn set_instance_cache(&self, rconn: &RdsConn) {
@@ -313,7 +348,7 @@ impl Post {
 }
 
 impl User {
-    pub async fn get_by_token(db: &Db, token: &str) -> Option<Self> {
+    async fn _get_by_token(db: &Db, token: &str) -> Option<Self> {
         let token = token.to_string();
         db.run(move |c| {
             users::table
@@ -324,12 +359,12 @@ impl User {
         .ok()
     }
 
-    pub async fn get_by_token_with_cache(db: &Db, rconn: &RdsConn, token: &str) -> Option<Self> {
+    pub async fn get_by_token(db: &Db, rconn: &RdsConn, token: &str) -> Option<Self> {
         let mut cacher = UserCache::init(token, &rconn);
         if let Some(u) = cacher.get().await {
             Some(u)
         } else {
-            let u = Self::get_by_token(db, token).await?;
+            let u = Self::_get_by_token(db, token).await?;
             cacher.set(&u).await;
             Some(u)
         }
@@ -347,9 +382,14 @@ pub struct NewComment {
 }
 
 impl Comment {
-    get!(comments);
+    _get!(comments);
 
     set_deleted!(comments);
+
+    pub async fn get(db: &Db, id: i32) -> QueryResult<Self> {
+        // no cache for single comment
+        Self::_get(db, id).await
+    }
 
     pub async fn create(db: &Db, new_comment: NewComment) -> QueryResult<Self> {
         db.run(move |c| {

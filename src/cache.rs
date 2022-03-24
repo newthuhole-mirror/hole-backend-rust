@@ -28,19 +28,12 @@ impl PostCache {
         }
         let kvs: Vec<(String, String)> = ps
             .iter()
-            .map(|p| (
-                post_cache_key!(p.id), 
-                serde_json::to_string(p).unwrap(),
-            ) ).collect();
-        dbg!(&kvs);
-        let ret = self.rconn
-            .set_multiple(&kvs)
-            .await
-            .unwrap_or_else(|e| {
-                warn!("set post cache failed: {}", e);
-                "x".to_string()
-            });
-        dbg!(ret);
+            .map(|p| (post_cache_key!(p.id), serde_json::to_string(p).unwrap()))
+            .collect();
+        self.rconn.set_multiple(&kvs).await.unwrap_or_else(|e| {
+            warn!("set post cache failed: {}", e);
+            dbg!(&kvs);
+        });
     }
 
     pub async fn get(&mut self, pid: &i32) -> Option<Post> {
@@ -100,6 +93,63 @@ impl PostCache {
     }
 }
 
+pub struct PostCommentCache {
+    key: String,
+    rconn: RdsConn,
+}
+
+impl PostCommentCache {
+    pub fn init(pid: i32, rconn: &RdsConn) -> Self {
+        PostCommentCache {
+            key: format!("hole_v2:cache:post_comments:{}", pid),
+            rconn: rconn.clone(),
+        }
+    }
+
+    pub async fn set(&mut self, cs: &Vec<Comment>) {
+        self.rconn
+            .set_ex(
+                &self.key,
+                serde_json::to_string(cs).unwrap(),
+                INSTANCE_EXPIRE_TIME,
+            )
+            .await
+            .unwrap_or_else(|e| {
+                warn!("set comments cache failed: {}", e);
+                dbg!(cs);
+            })
+    }
+
+    pub async fn get(&mut self) -> Option<Vec<Comment>> {
+        let rds_result = self.rconn.get::<&String, String>(&self.key).await;
+        // dbg!(&rds_result);
+        if let Ok(s) = rds_result {
+            self.rconn
+                .expire::<&String, bool>(&self.key, INSTANCE_EXPIRE_TIME)
+                .await
+                .unwrap_or_else(|e| {
+                    warn!(
+                        "get comments cache, set new expire failed: {}, {}, {} ",
+                        e, &self.key, &s
+                    );
+                    false
+                });
+            serde_json::from_str(&s).unwrap_or_else(|e| {
+                warn!("get comments cache, decode failed {}, {}", e, s);
+                None
+            })
+        } else {
+            None
+        }
+    }
+
+    pub async fn clear(&mut self) {
+        self.rconn.del(&self.key).await.unwrap_or_else(|e| {
+            warn!("clear commenrs cache fail, {}", e);
+        });
+    }
+}
+
 pub struct UserCache {
     key: String,
     rconn: RdsConn,
@@ -122,14 +172,14 @@ impl UserCache {
             )
             .await
             .unwrap_or_else(|e| {
-                warn!("set user cache failed: {}, {}, {}", e, u.id, u.name);
+                warn!("set user cache failed: {}", e);
+                dbg!(u);
             })
     }
 
     pub async fn get(&mut self) -> Option<User> {
         let rds_result = self.rconn.get::<&String, String>(&self.key).await;
         if let Ok(s) = rds_result {
-            debug!("hint user cache");
             self.rconn
                 .expire::<&String, bool>(&self.key, INSTANCE_EXPIRE_TIME)
                 .await

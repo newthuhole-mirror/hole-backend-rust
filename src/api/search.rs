@@ -17,7 +17,10 @@ pub async fn search(
     let page_size = 25;
     let start = (page - 1) * page_size;
 
-    let kws = keywords.split(" ").filter(|x| !x.is_empty()).collect::<Vec<&str>>();
+    let kws = keywords
+        .split(" ")
+        .filter(|x| !x.is_empty())
+        .collect::<Vec<&str>>();
     let ps = if kws.is_empty() {
         vec![]
     } else {
@@ -30,7 +33,6 @@ pub async fn search(
         )
         .await?
     };
-    let mark_kws = if search_mode == 1 {kws} else {vec![]};
     let ps_data = ps2outputs(&ps, &user, &db, &rconn).await;
     Ok(json!({
         "data": ps_data,

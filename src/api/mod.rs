@@ -40,7 +40,7 @@ impl<'r> FromRequest<'r> for CurrentUser {
             } else {
                 let db = try_outcome!(request.guard::<Db>().await);
                 let rconn = try_outcome!(request.guard::<RdsConn>().await);
-                if let Some(user) = User::get_by_token_with_cache(&db, &rconn, token).await {
+                if let Some(user) = User::get_by_token(&db, &rconn, token).await {
                     let namehash = rh.hash_with_salt(&user.name);
                     cu = Some(CurrentUser {
                         id: Some(user.id),
@@ -74,7 +74,6 @@ pub enum APIError {
 
 impl<'r> Responder<'r, 'static> for APIError {
     fn respond_to(self, req: &'r Request<'_>) -> response::Result<'static> {
-        dbg!(&self);
         match self {
             APIError::DbError(e) => json!({
                 "code": -1,
@@ -120,7 +119,7 @@ pub trait UGC {
     fn get_is_deleted(&self) -> bool;
     fn get_is_reported(&self) -> bool;
     fn extra_delete_condition(&self) -> bool;
-    async fn do_set_deleted(&self, db: &Db) -> API<usize>;
+    async fn do_set_deleted(&mut self, db: &Db) -> API<()>;
     fn check_permission(&self, user: &CurrentUser, mode: &str) -> API<()> {
         if user.is_admin {
             return Ok(());
@@ -140,10 +139,10 @@ pub trait UGC {
         Ok(())
     }
 
-    async fn soft_delete(&self, user: &CurrentUser, db: &Db) -> API<()> {
+    async fn soft_delete(&mut self, user: &CurrentUser, db: &Db) -> API<()> {
         self.check_permission(user, "rwd")?;
 
-        let _ = self.do_set_deleted(db).await?;
+        self.do_set_deleted(db).await?;
         Ok(())
     }
 }
@@ -162,7 +161,7 @@ impl UGC for Post {
     fn extra_delete_condition(&self) -> bool {
         self.n_comments == 0
     }
-    async fn do_set_deleted(&self, db: &Db) -> API<usize> {
+    async fn do_set_deleted(&mut self, db: &Db) -> API<()> {
         self.set_deleted(db).await.map_err(From::from)
     }
 }
@@ -181,7 +180,7 @@ impl UGC for Comment {
     fn extra_delete_condition(&self) -> bool {
         true
     }
-    async fn do_set_deleted(&self, db: &Db) -> API<usize> {
+    async fn do_set_deleted(&mut self, db: &Db) -> API<()> {
         self.set_deleted(db).await.map_err(From::from)
     }
 }

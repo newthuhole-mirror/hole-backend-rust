@@ -5,7 +5,7 @@ use crate::rds_conn::RdsConn;
 use crate::rds_models::*;
 use chrono::{offset::Utc, DateTime};
 use rocket::form::Form;
-use rocket::futures::{future::TryFutureExt, try_join};
+use rocket::futures::{future::TryFutureExt, join, try_join};
 use rocket::serde::{
     json::{json, Value},
     Serialize,
@@ -34,11 +34,7 @@ pub struct CommentOutput {
     timestamp: i64,
 }
 
-pub fn c2output<'r>(
-    p: &'r Post,
-    cs: &Vec<Comment>,
-    user: &CurrentUser,
-) -> Vec<CommentOutput> {
+pub fn c2output<'r>(p: &'r Post, cs: &Vec<Comment>, user: &CurrentUser) -> Vec<CommentOutput> {
     let mut hash2id = HashMap::<&String, i32>::from([(&p.author_hash, 0)]);
     cs.iter()
         .filter_map(|c| {
@@ -71,12 +67,11 @@ pub fn c2output<'r>(
 
 #[get("/getcomment?<pid>")]
 pub async fn get_comment(pid: i32, user: CurrentUser, db: Db, rconn: RdsConn) -> API<Value> {
-    let p = Post::get(&db, pid).await?;
+    let p = Post::get(&db, &rconn, pid).await?;
     if p.is_deleted {
         return Err(APIError::PcError(IsDeleted));
     }
-    let pid = p.id;
-    let cs = Comment::gets_by_post_id(&db, pid).await?;
+    let cs = p.get_comments(&db, &rconn).await?;
     let data = c2output(&p, &cs, &user);
 
     Ok(json!({
@@ -96,7 +91,7 @@ pub async fn add_comment(
     db: Db,
     rconn: RdsConn,
 ) -> API<Value> {
-    let mut p = Post::get(&db, ci.pid).await?;
+    let mut p = Post::get(&db, &rconn, ci.pid).await?;
     Comment::create(
         &db,
         NewComment {
@@ -108,7 +103,7 @@ pub async fn add_comment(
         },
     )
     .await?;
-    p = p.change_n_comments(&db, 1).await?;
+    p.change_n_comments(&db, 1).await?;
     // auto attention after comment
     let mut att = Attention::init(&user.namehash, &rconn);
 
@@ -119,15 +114,18 @@ pub async fn add_comment(
         try_join!(
             att.add(p.id).err_into::<APIError>(),
             async {
-                p = p.change_n_attentions(&db, 1).await?;
+                p.change_n_attentions(&db, 1).await?;
                 Ok::<(), APIError>(())
             }
             .err_into::<APIError>(),
         )?;
     }
 
-    p = p.change_hot_score(&db, hs_delta).await?;
-    p.refresh_cache(&rconn, false).await;
+    p.change_hot_score(&db, hs_delta).await?;
+    join!(
+        p.refresh_cache(&rconn, false),
+        p.clear_comments_cache(&rconn),
+    );
 
     Ok(json!({
         "code": 0

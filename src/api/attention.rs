@@ -22,7 +22,7 @@ pub async fn attention_post(
     rconn: RdsConn,
 ) -> API<Value> {
     user.id.ok_or_else(|| APIError::PcError(NotAllowed))?;
-    let mut p = Post::get(&db, ai.pid).await?;
+    let mut p = Post::get(&db, &rconn, ai.pid).await?;
     p.check_permission(&user, "r")?;
     let mut att = Attention::init(&user.namehash, &rconn);
     let switch_to = ai.switch == 1;
@@ -35,8 +35,8 @@ pub async fn attention_post(
             att.remove(ai.pid).await?;
             delta = -1;
         }
-        p = p.change_n_attentions(&db, delta).await?;
-        p = p.change_hot_score(&db, delta * 2).await?;
+        p.change_n_attentions(&db, delta).await?;
+        p.change_hot_score(&db, delta * 2).await?;
         p.refresh_cache(&rconn, false).await;
     }
 
@@ -52,7 +52,7 @@ pub async fn attention_post(
 #[get("/getattention")]
 pub async fn get_attention(user: CurrentUser, db: Db, rconn: RdsConn) -> API<Value> {
     let ids = Attention::init(&user.namehash, &rconn).all().await?;
-    let ps = Post::get_multi(&db, ids).await?;
+    let ps = Post::get_multi(&db, &rconn, &ids).await?;
     let ps_data = ps2outputs(&ps, &user, &db, &rconn).await;
 
     Ok(json!({

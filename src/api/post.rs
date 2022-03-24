@@ -50,12 +50,7 @@ pub struct CwInput {
     cw: String,
 }
 
-async fn p2output(
-    p: &Post,
-    user: &CurrentUser,
-    db: &Db,
-    rconn: &RdsConn,
-) -> PostOutput {
+async fn p2output(p: &Post, user: &CurrentUser, db: &Db, rconn: &RdsConn) -> PostOutput {
     PostOutput {
         pid: p.id,
         text: format!("{}{}", if p.is_tmp { "[tmp]\n" } else { "" }, p.content),
@@ -84,8 +79,7 @@ async fn p2output(
             None
         } else {
             // 单个洞还有查询评论的接口，这里挂了不用报错
-            let pid = p.id;
-            if let Some(cs) = Comment::gets_by_post_id(db, pid).await.ok() {
+            if let Some(cs) = p.get_comments(db, rconn).await.ok() {
                 Some(c2output(p, &cs, user))
             } else {
                 None
@@ -96,7 +90,11 @@ async fn p2output(
             .has(p.id)
             .await
             .unwrap_or_default(),
-        hot_score: if user.is_admin { Some(p.hot_score) } else { None },
+        hot_score: if user.is_admin {
+            Some(p.hot_score)
+        } else {
+            None
+        },
         // for old version frontend
         timestamp: p.create_time.timestamp(),
         likenum: p.n_attentions,
@@ -120,7 +118,7 @@ pub async fn ps2outputs(
 #[get("/getone?<pid>")]
 pub async fn get_one(pid: i32, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonAPI {
     // let p = Post::get(&db, pid).await?;
-    let p = Post::get_with_cache(&db, &rconn, pid).await?;
+    let p = Post::get(&db, &rconn, pid).await?;
     p.check_permission(&user, "ro")?;
     Ok(json!({
         "data": p2output(&p, &user,&db, &rconn).await,
@@ -175,19 +173,20 @@ pub async fn publish_post(
 }
 
 #[post("/editcw", data = "<cwi>")]
-pub async fn edit_cw(cwi: Form<CwInput>, user: CurrentUser, db: Db) -> JsonAPI {
-    let p = Post::get(&db, cwi.pid).await?;
+pub async fn edit_cw(cwi: Form<CwInput>, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonAPI {
+    let mut p = Post::get(&db, &rconn, cwi.pid).await?;
     if !(user.is_admin || p.author_hash == user.namehash) {
         return Err(APIError::PcError(NotAllowed));
     }
     p.check_permission(&user, "w")?;
-    _ = p.update_cw(&db, cwi.cw.to_string()).await?;
+    p.update_cw(&db, cwi.cw.to_string()).await?;
+    p.refresh_cache(&rconn, false);
     Ok(json!({"code": 0}))
 }
 
 #[get("/getmulti?<pids>")]
 pub async fn get_multi(pids: Vec<i32>, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonAPI {
-    let ps = Post::get_multi_with_cache(&db, &rconn, &pids).await?;
+    let ps = Post::get_multi(&db, &rconn, &pids).await?;
     let ps_data = ps2outputs(&ps, &user, &db, &rconn).await;
 
     Ok(json!({
