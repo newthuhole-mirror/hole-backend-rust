@@ -54,47 +54,27 @@ async fn p2output(p: &Post, user: &CurrentUser, db: &Db, rconn: &RdsConn) -> Pos
     PostOutput {
         pid: p.id,
         text: format!("{}{}", if p.is_tmp { "[tmp]\n" } else { "" }, p.content),
-        cw: if p.cw.len() > 0 {
-            Some(p.cw.to_string())
-        } else {
-            None
-        },
+        cw: (!p.cw.is_empty()).then(|| p.cw.to_string()),
         n_attentions: p.n_attentions,
         n_comments: p.n_comments,
         create_time: p.create_time,
         last_comment_time: p.last_comment_time,
         allow_search: p.allow_search,
-        author_title: if p.author_title.len() > 0 {
-            Some(p.author_title.to_string())
-        } else {
-            None
-        },
+        author_title: (!p.author_title.is_empty()).then(|| p.author_title.to_string()),
         is_tmp: p.is_tmp,
-        is_reported: if user.is_admin {
-            Some(p.is_reported)
-        } else {
-            None
-        },
+        is_reported: user.is_admin.then(|| p.is_reported),
         comments: if p.n_comments > 50 {
             None
         } else {
             // 单个洞还有查询评论的接口，这里挂了不用报错
-            if let Some(cs) = p.get_comments(db, rconn).await.ok() {
-                Some(c2output(p, &cs, user))
-            } else {
-                None
-            }
+            p.get_comments(db, rconn).await.ok().map(|cs| c2output(p, &cs, user))
         },
         can_del: p.check_permission(user, "wd").is_ok(),
         attention: Attention::init(&user.namehash, &rconn)
             .has(p.id)
             .await
             .unwrap_or_default(),
-        hot_score: if user.is_admin {
-            Some(p.hot_score)
-        } else {
-            None
-        },
+        hot_score: user.is_admin.then(|| p.hot_score),
         // for old version frontend
         timestamp: p.create_time.timestamp(),
         likenum: p.n_attentions,
