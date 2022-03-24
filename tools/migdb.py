@@ -27,8 +27,8 @@ def mig_post():
         r[3] = r[3] or ''  # cw
         r[4] = r[4] or ''  # author_title
         r[8] = r[8] or r[7]  # comment_timestamp
-        r[7] = datetime.fromtimestamp(r[7])
-        r[8] = datetime.fromtimestamp(r[8])
+        r[7] = datetime.fromtimestamp(r[7]).astimezone()
+        r[8] = datetime.fromtimestamp(r[8]).astimezone()
         r[9] = bool(r[9])
         r[10] = bool(r[10] or False)  # comment
         r[12] = bool(r[12])
@@ -82,7 +82,7 @@ def mig_comment():
         for r in rs:
             r = list(r)
             r[2] = r[2] or ''
-            r[4] = datetime.fromtimestamp(r[4])
+            r[4] = datetime.fromtimestamp(r[4]).astimezone()
             r[5] = bool(r[5] or False)
             r.insert(6, searchable[r[6]])
             r.insert(3, r[3].startswith('[tmp]\n'))
