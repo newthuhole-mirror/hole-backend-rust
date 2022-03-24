@@ -5,6 +5,9 @@ extern crate rocket;
 extern crate diesel;
 
 #[macro_use]
+extern crate diesel_migrations;
+
+#[macro_use]
 extern crate log;
 
 mod api;
@@ -17,13 +20,21 @@ mod rds_models;
 mod cache;
 mod schema;
 
-use db_conn::Db;
+use db_conn::{Conn, Db};
+use diesel::Connection;
 use random_hasher::RandomHasher;
 use rds_conn::init_rds_client;
+use std::env;
+
+embed_migrations!("migrations/postgres");
 
 #[rocket::main]
 async fn main() -> Result<(), rocket::Error> {
     load_env();
+    if env::args().any(|arg| arg.eq("--init-database")) {
+        init_database();
+        return Ok(());
+    }
     env_logger::init();
     rocket::build()
         .mount(
@@ -57,4 +68,10 @@ fn load_env() {
         Err(ref e) if e.not_found() => eprintln!("Warning: no .env was found"),
         e => e.map(|_| ()).unwrap(),
     }
+}
+
+fn init_database() {
+    let database_url = env::var("DATABASE_URL").unwrap();
+    let conn = Conn::establish(&database_url).unwrap();
+    embedded_migrations::run(&conn).unwrap();
 }
