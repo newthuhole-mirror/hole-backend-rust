@@ -1,5 +1,11 @@
 use crate::rds_conn::RdsConn;
+use chrono::{offset::Local, DateTime};
 use redis::{AsyncCommands, RedisResult};
+use rocket::serde::json::serde_json;
+use rocket::serde::{Deserialize, Serialize};
+
+const KEY_SYSTEMLOG: &str = "hole_v2:systemlog_list";
+const SYSTEMLOG_MAX_LEN: isize = 1000;
 
 pub struct Attention {
     key: String,
@@ -28,5 +34,47 @@ impl Attention {
 
     pub async fn all(&mut self) -> RedisResult<Vec<i32>> {
         self.rconn.smembers(&self.key).await
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(crate = "rocket::serde")]
+pub enum LogType {
+    AdminDelete,
+    Report,
+    Ban
+}
+
+
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(crate = "rocket::serde")]
+pub struct Systemlog {
+    pub user_hash: String,
+    pub action_type: LogType,
+    pub target: String,
+    pub detail: String,
+    pub time: DateTime<Local>,
+}
+
+impl Systemlog {
+    pub async fn create(&self, rconn: &RdsConn) -> RedisResult<()> {
+        let mut rconn = rconn.clone();
+        if rconn.llen::<&str, isize>(KEY_SYSTEMLOG).await? > SYSTEMLOG_MAX_LEN {
+            rconn.ltrim(KEY_SYSTEMLOG, 0, SYSTEMLOG_MAX_LEN - 1).await?;
+        }
+        rconn
+            .lpush(KEY_SYSTEMLOG, serde_json::to_string(&self).unwrap())
+            .await
+    }
+
+    pub async fn get_list(rconn: &RdsConn, limit: isize) -> RedisResult<Vec<Self>> {
+        let rds_result = rconn
+            .clone()
+            .lrange::<&str, Vec<String>>(KEY_SYSTEMLOG, 0, limit)
+            .await?;
+        Ok(rds_result
+            .iter()
+            .map(|s| serde_json::from_str(s).unwrap())
+            .collect())
     }
 }

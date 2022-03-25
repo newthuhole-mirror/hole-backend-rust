@@ -179,11 +179,9 @@ impl Post {
     }
 
     pub async fn get(db: &Db, rconn: &RdsConn, id: i32) -> QueryResult<Self> {
+        // 注意即使is_deleted也应该缓存和返回
         let mut cacher = PostCache::init(&rconn);
         if let Some(p) = cacher.get(&id).await {
-            if p.is_deleted {
-                return Err(diesel::result::Error::NotFound);
-            }
             Ok(p)
         } else {
             let p = Self::_get(db, id).await?;

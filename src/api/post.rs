@@ -100,7 +100,6 @@ pub async fn ps2outputs(
 
 #[get("/getone?<pid>")]
 pub async fn get_one(pid: i32, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonAPI {
-    // let p = Post::get(&db, pid).await?;
     let p = Post::get(&db, &rconn, pid).await?;
     p.check_permission(&user, "ro")?;
     Ok(json!({
