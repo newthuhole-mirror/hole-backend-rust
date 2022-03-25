@@ -48,7 +48,7 @@ impl PostCache {
             .get::<String, Option<String>>(key)
             .await
             .unwrap_or_else(|e| {
-                warn!("try to get post cache, connect rds fail, {}", e);
+                warn!("try to get post cache, connect rds failed, {}", e);
                 None
             });
 
@@ -74,7 +74,7 @@ impl PostCache {
                     .get::<Vec<String>, Vec<Option<String>>>(ks)
                     .await
                     .unwrap_or_else(|e| {
-                        warn!("try to get posts cache, connect rds fail, {}", e);
+                        warn!("try to get posts cache, connect rds failed, {}", e);
                         vec![None; pids.len()]
                     });
                 // dbg!(&rds_result);
@@ -95,6 +95,22 @@ impl PostCache {
                     .collect()
             }
         }
+    }
+
+    pub async fn clear_all(&mut self) {
+        let mut keys = self.rconn.scan_match::<String, String>(post_cache_key!("*")).await.unwrap(); //.collect::<Vec<String>>().await;
+        // colllect() does not work
+        // also see: https://github.com/mitsuhiko/redis-rs/issues/583
+        let mut ks_for_del = Vec::new();
+        while let Some(key) = keys.next_item().await {
+            ks_for_del.push(key);
+        }
+        if ks_for_del.is_empty() {
+            return;
+        }
+        self.rconn.del(ks_for_del).await.unwrap_or_else(|e| {
+            warn!("clear all post cache fail, {}", e)
+        });
     }
 }
 
@@ -228,7 +244,7 @@ impl PostListCommentCache {
     pub async fn put(&mut self, p: &Post) {
         // 其他都是加到最前面的，但热榜不是。可能导致MIN_LENGTH到MAX_LENGTH之间的数据不可靠
         // 影响不大，先不管了
-        if p.is_deleted {
+        if p.is_deleted  || (self.mode > 0 && p.is_reported) {
             self.rconn.zrem(&self.key, p.id).await.unwrap_or_else(|e| {
                 warn!(
                     "remove from list cache failed, {} {} {}",
@@ -255,6 +271,12 @@ impl PostListCommentCache {
             )
             .await
             .unwrap()
+    }
+
+    pub async fn clear(&mut self) {
+        self.rconn.del(&self.key).await.unwrap_or_else(|e| {
+            warn!("clear post list cache failed, {}", e);
+        });
     }
 }
 

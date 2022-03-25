@@ -164,7 +164,7 @@ pub async fn edit_cw(cwi: Form<CwInput>, user: CurrentUser, db: Db, rconn: RdsCo
     }
     p.check_permission(&user, "w")?;
     p.update_cw(&db, cwi.cw.to_string()).await?;
-    p.refresh_cache(&rconn, false);
+    p.refresh_cache(&rconn, false).await;
     Ok(json!({"code": 0}))
 }
 

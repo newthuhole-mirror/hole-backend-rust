@@ -8,16 +8,14 @@ license = "AGPL-3.0"
 
 [dependencies]
 rocket = { version = "0.5.0-rc.1", features = ["json"] }
+rocket_sync_db_pools = { version = "0.1.0-cr.1", features = ["diesel_postgres_pool"] }
 diesel = { version = "1.4.8", features = ["postgres", "chrono"] }
 diesel_migrations = "1.4.0"
+tokio = "1.17.0"
 redis = { version="0.21.5", features = ["aio", "tokio-comp"] }
-chrono = { version="0.*", features =["serde"] }
-rand = "0.*"
-dotenv = "0.*"
-sha2 = "0.*"
+chrono = { version="0.4.19", features =["serde"] }
+rand = "0.8.5"
+dotenv = "0.15.0"
+sha2 = "0.10.2"
 log = "0.4.16"
 env_logger = "0.9.0"
-
-[dependencies.rocket_sync_db_pools]
-version = "0.1.0-rc.1"
-features = ["diesel_postgres_pool"]

@@ -11,20 +11,21 @@ extern crate diesel_migrations;
 extern crate log;
 
 mod api;
+mod cache;
 mod db_conn;
 mod libs;
 mod models;
 mod random_hasher;
 mod rds_conn;
 mod rds_models;
-mod cache;
 mod schema;
 
-use db_conn::{Conn, Db};
+use db_conn::{establish_connection, Conn, Db};
 use diesel::Connection;
 use random_hasher::RandomHasher;
 use rds_conn::init_rds_client;
 use std::env;
+use tokio::time::{interval, Duration};
 
 embed_migrations!("migrations/postgres");
 
@@ -36,6 +37,15 @@ async fn main() -> Result<(), rocket::Error> {
         return Ok(());
     }
     env_logger::init();
+    let rmc = init_rds_client().await;
+    let rconn = rds_conn::RdsConn(rmc.clone());
+    tokio::spawn(async move {
+        let mut itv = interval(Duration::from_secs(4 * 60 * 60));
+        loop {
+            itv.tick().await;
+            models::Post::annealing(establish_connection(), &rconn).await;
+        }
+    });
     rocket::build()
         .mount(
             "/_api/v1",
@@ -56,7 +66,7 @@ async fn main() -> Result<(), rocket::Error> {
         )
         .register("/_api", catchers![api::catch_401_error])
         .manage(RandomHasher::get_random_one())
-        .manage(init_rds_client().await)
+        .manage(rmc)
         .attach(Db::fairing())
         .launch()
         .await

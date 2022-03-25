@@ -1,12 +1,13 @@
 #![allow(clippy::all)]
 
 use crate::cache::*;
-use crate::db_conn::Db;
+use crate::db_conn::{Conn, Db};
 use crate::libs::diesel_logger::LoggingConnection;
 use crate::rds_conn::RdsConn;
 use crate::schema::*;
 use chrono::{offset::Utc, DateTime};
 use diesel::dsl::any;
+use diesel::sql_types::*;
 use diesel::{
     insert_into, BoolExpressionMethods, ExpressionMethods, QueryDsl, QueryResult, RunQueryDsl,
     TextExpressionMethods,
@@ -14,9 +15,10 @@ use diesel::{
 use rocket::futures::{future, join};
 use rocket::serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::convert::identity;
 
 no_arg_sql_function!(RANDOM, (), "Represents the sql RANDOM() function");
+sql_function!(fn floor(x: Float) -> Int4);
+sql_function!(fn float4(x: Int4) -> Float);
 
 macro_rules! _get {
     ($table:ident) => {
@@ -162,9 +164,7 @@ impl Post {
         let missing_ps = Self::_get_multi(db, missing_ids).await?;
         // dbg!(&missing_ps);
 
-        cacher
-            .sets(&missing_ps.iter().map(identity).collect())
-            .await;
+        cacher.sets(&missing_ps.iter().collect()).await;
 
         for p in missing_ps.into_iter() {
             if let Some(op) = id2po.get_mut(&p.id) {
@@ -389,6 +389,17 @@ impl Post {
                     .await
             })),
         );
+    }
+
+    pub async fn annealing(mut c: Conn, rconn: &RdsConn) {
+        info!("Time for annealing!");
+        diesel::update(posts::table.filter(posts::hot_score.gt(10)))
+            .set(posts::hot_score.eq(floor(float4(posts::hot_score) * 0.9)))
+            .execute(with_log!(&mut c))
+            .unwrap();
+
+        PostCache::init(&rconn).clear_all().await;
+        PostListCommentCache::init(2, rconn).await.clear().await
     }
 }
 

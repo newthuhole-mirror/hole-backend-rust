@@ -29,17 +29,17 @@ pub async fn delete(
             p.change_n_comments(&db, -1).await?;
             p.change_hot_score(&db, -1).await?;
 
+            p.refresh_cache(&rconn, false).await;
             p.clear_comments_cache(&rconn).await;
         }
         "pid" => {
             p = Post::get(&db, &rconn, di.id).await?;
             p.soft_delete(&user, &db).await?;
+            // 如果是删除，需要也从0号缓存队列中去掉
+            p.refresh_cache(&rconn, true).await;
         }
         _ => return Err(APIError::PcError(NotAllowed)),
     }
-
-    // 如果是删除，需要也从0号缓存队列中去掉
-    p.refresh_cache(&rconn, true).await;
 
     Ok(json!({
         "code": 0
