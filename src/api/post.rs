@@ -14,9 +14,9 @@ use rocket::serde::{json::json, Serialize};
 
 #[derive(FromForm)]
 pub struct PostInput {
-    #[field(validate = len(1..4097))]
+    #[field(validate = len(1..12289))]
     text: String,
-    #[field(validate = len(0..33))]
+    #[field(validate = len(0..97))]
     cw: String,
     allow_search: Option<i8>,
     use_title: Option<i8>,
@@ -52,7 +52,7 @@ pub struct PostOutput {
 #[derive(FromForm)]
 pub struct CwInput {
     pid: i32,
-    #[field(validate = len(0..33))]
+    #[field(validate = len(0..97))]
     cw: String,
 }
 
@@ -145,6 +145,7 @@ pub async fn get_list(
     Ok(json!({
         "data": ps_data,
         "count": ps_data.len(),
+        "custom_title": CustomTitle::get(&rconn, &user.namehash).await?,
         "code": 0
     }))
 }
@@ -162,7 +163,12 @@ pub async fn publish_post(
             content: poi.text.to_string(),
             cw: poi.cw.to_string(),
             author_hash: user.namehash.to_string(),
-            author_title: "".to_string(),
+            author_title: (if poi.use_title.is_some() {
+                CustomTitle::get(&rconn, &user.namehash).await?
+            } else {
+                None
+            })
+            .unwrap_or_default(),
             is_tmp: user.id.is_none(),
             n_attentions: 1,
             allow_search: poi.allow_search.is_some(),

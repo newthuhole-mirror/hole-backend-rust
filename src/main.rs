@@ -66,6 +66,7 @@ async fn main() -> Result<(), rocket::Error> {
                 api::systemlog::get_systemlog,
                 api::operation::delete,
                 api::operation::report,
+                api::operation::set_title,
                 api::operation::block,
             ],
         )
@@ -96,4 +97,5 @@ fn init_database() {
 
 async fn clear_outdate_redis_data(rconn: &RdsConn) {
     rds_models::BannedUsers::clear(&rconn).await.unwrap();
+    rds_models::CustomTitle::clear(&rconn).await.unwrap();
 }

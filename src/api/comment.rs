@@ -16,7 +16,7 @@ use std::collections::HashMap;
 #[derive(FromForm)]
 pub struct CommentInput {
     pid: i32,
-    #[field(validate = len(1..4097))]
+    #[field(validate = len(1..12289))]
     text: String,
     use_title: Option<i8>,
 }
@@ -118,7 +118,12 @@ pub async fn add_comment(
         NewComment {
             content: ci.text.to_string(),
             author_hash: user.namehash.to_string(),
-            author_title: "".to_string(),
+            author_title: (if ci.use_title.is_some() {
+                CustomTitle::get(&rconn, &user.namehash).await?
+            } else {
+                None
+            })
+            .unwrap_or_default(),
             is_tmp: user.id.is_none(),
             post_id: ci.pid,
         },

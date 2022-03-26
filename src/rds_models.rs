@@ -26,6 +26,7 @@ const KEY_SYSTEMLOG: &str = "hole_v2:systemlog_list";
 const KEY_BANNED_USERS: &str = "hole_v2:banned_user_hash_list";
 const KEY_BLOCKED_COUNTER: &str = "hole_v2:blocked_counter";
 const KEY_DANGEROUS_USERS: &str = "hole_thu:dangerous_users"; //兼容一下旧版
+const KEY_CUSTOM_TITLE: &str = "hole_v2:title";
 
 const SYSTEMLOG_MAX_LEN: isize = 1000;
 pub const BLOCK_THRESHOLD: i32 = 10;
@@ -181,6 +182,31 @@ impl DangerousUser {
     pub async fn has(rconn: &RdsConn, namehash: &str) -> RedisResult<bool> {
         rconn.clone().sismember(KEY_DANGEROUS_USERS, namehash).await
     }
+}
+
+pub struct CustomTitle;
+
+impl CustomTitle {
+    // return false if title exits
+    pub async fn set(rconn: &RdsConn, namehash: &str, title: &str) -> RedisResult<bool> {
+        let mut rconn = rconn.clone();
+        if rconn.hexists(KEY_CUSTOM_TITLE, title).await? {
+            Ok(false)
+        } else {
+            rconn.hset(KEY_CUSTOM_TITLE, namehash, title).await?;
+            rconn.hset(KEY_CUSTOM_TITLE, title, namehash).await?;
+            Ok(true)
+        }
+    }
+
+    pub async fn get(rconn: &RdsConn, namehash: &str) -> RedisResult<Option<String>> {
+        rconn.clone().hget(KEY_CUSTOM_TITLE, namehash).await
+    }
+
+    pub async fn clear(rconn: &RdsConn) -> RedisResult<()> {
+        rconn.clone().del(KEY_CUSTOM_TITLE).await
+    }
+
 }
 
 pub(crate) use init;

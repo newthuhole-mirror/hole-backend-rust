@@ -47,7 +47,7 @@ pub async fn delete(di: Form<DeleteInput>, user: CurrentUser, db: Db, rconn: Rds
 
             (p.author_hash.clone(), p)
         }
-        _ => { Err(NotAllowed) }?,
+        _ => Err(NotAllowed)?,
     };
 
     if user.is_admin && !user.namehash.eq(&author_hash) {
@@ -128,11 +128,11 @@ pub async fn block(bi: Form<BlockInput>, user: CurrentUser, db: Db, rconn: RdsCo
     let nh_to_block = match bi.content_type.as_str() {
         "post" => Post::get(&db, &rconn, bi.id).await?.author_hash,
         "comment" => Comment::get(&db, bi.id).await?.author_hash,
-        _ => { Err(NotAllowed) }?,
+        _ => Err(NotAllowed)?,
     };
 
     if nh_to_block.eq(&user.namehash) {
-        { Err(NotAllowed) }?;
+        Err(NotAllowed)?;
     }
 
     blk.add(&nh_to_block).await?;
@@ -149,4 +149,19 @@ pub async fn block(bi: Form<BlockInput>, user: CurrentUser, db: Db, rconn: RdsCo
             "threshold": BLOCK_THRESHOLD,
         },
     }))
+}
+
+#[derive(FromForm)]
+pub struct TitleInput {
+    #[field(validate = len(1..31))]
+    title: String,
+}
+
+#[post("/title", data = "<ti>")]
+pub async fn set_title(ti: Form<TitleInput>, user: CurrentUser, rconn: RdsConn) -> JsonAPI {
+    if CustomTitle::set(&rconn, &user.namehash, &ti.title).await? {
+        code0!()
+    } else {
+        Err(TitleUsed)?
+    }
 }

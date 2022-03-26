@@ -84,6 +84,7 @@ pub enum PolicyError {
     IsReported,
     IsDeleted,
     NotAllowed,
+    TitleUsed,
 }
 
 #[derive(Debug)]
@@ -112,6 +113,7 @@ impl<'r> Responder<'r, 'static> for APIError {
                     PolicyError::IsReported => "内容被举报，处理中",
                     PolicyError::IsDeleted => "内容被删除",
                     PolicyError::NotAllowed => "不允许的操作",
+                    PolicyError::TitleUsed => "头衔已被使用",
                 }
             })
             .respond_to(req),
