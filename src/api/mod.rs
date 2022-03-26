@@ -16,6 +16,13 @@ macro_rules! code0 {
     () => (
         Ok(json!({"code": 0}))
     );
+
+    ($data:expr) => (
+        Ok(json!({
+            "code": 0,
+            "data": $data,
+        }))
+    );
 }
 
 #[catch(401)]
@@ -228,3 +235,4 @@ pub mod operation;
 pub mod post;
 pub mod search;
 pub mod systemlog;
+pub mod vote;

@@ -1,4 +1,5 @@
 use crate::api::comment::{c2output, CommentOutput};
+use crate::api::vote::get_poll_dict;
 use crate::api::{CurrentUser, JsonAPI, UGC};
 use crate::db_conn::Db;
 use crate::libs::diesel_logger::LoggingConnection;
@@ -10,7 +11,10 @@ use chrono::{offset::Utc, DateTime};
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use rocket::form::Form;
 use rocket::futures::future;
-use rocket::serde::{json::json, Serialize};
+use rocket::serde::{
+    json::{json, Value},
+    Serialize,
+};
 
 #[derive(FromForm)]
 pub struct PostInput {
@@ -20,6 +24,8 @@ pub struct PostInput {
     cw: String,
     allow_search: Option<i8>,
     use_title: Option<i8>,
+    #[field(validate = len(0..97))]
+    poll_options: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -42,6 +48,7 @@ pub struct PostOutput {
     hot_score: Option<i32>,
     is_blocked: bool,
     blocked_count: Option<i32>,
+    poll: Option<Value>,
     // for old version frontend
     timestamp: i64,
     likenum: i32,
@@ -98,6 +105,7 @@ async fn p2output(p: &Post, user: &CurrentUser, db: &Db, rconn: &RdsConn) -> Pos
         } else {
             None
         },
+        poll: get_poll_dict(p.id, rconn, &user.namehash).await,
         // for old version frontend
         timestamp: p.create_time.timestamp(),
         likenum: p.n_attentions,
@@ -177,6 +185,12 @@ pub async fn publish_post(
     .await?;
     Attention::init(&user.namehash, &rconn).add(p.id).await?;
     p.refresh_cache(&rconn, true).await;
+
+    if !poi.poll_options.is_empty() {
+        PollOption::init(p.id, &rconn)
+            .set_list(&poi.poll_options)
+            .await?;
+    }
     code0!()
 }
 

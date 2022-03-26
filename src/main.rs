@@ -68,6 +68,7 @@ async fn main() -> Result<(), rocket::Error> {
                 api::operation::report,
                 api::operation::set_title,
                 api::operation::block,
+                api::vote::vote,
             ],
         )
         .register(

@@ -5,6 +5,13 @@ use rocket::serde::json::serde_json;
 use rocket::serde::{Deserialize, Serialize};
 
 macro_rules! init {
+    () => {
+        pub fn init(rconn: &RdsConn) -> Self {
+            Self {
+                rconn: rconn.clone(),
+            }
+        }
+    };
     ($ktype:ty, $formatter:expr) => {
         pub fn init(k: $ktype, rconn: &RdsConn) -> Self {
             Self {
@@ -13,11 +20,28 @@ macro_rules! init {
             }
         }
     };
-    () => {
-        pub fn init(rconn: &RdsConn) -> Self {
+    ($k1type:ty, $k2type:ty, $formatter:expr) => {
+        pub fn init(k1: $k1type, k2: $k2type, rconn: &RdsConn) -> Self {
             Self {
+                key: format!($formatter, k1, k2),
                 rconn: rconn.clone(),
             }
+        }
+    };
+}
+
+macro_rules! has {
+    ($vtype:ty) => {
+        pub async fn has(&mut self, v: $vtype) -> RedisResult<bool> {
+            self.rconn.sismember(&self.key, v).await
+        }
+    };
+}
+
+macro_rules! add {
+    ($vtype:ty) => {
+        pub async fn add(&mut self, v: $vtype) -> RedisResult<()> {
+            self.rconn.sadd(&self.key, v).await
         }
     };
 }
@@ -39,16 +63,12 @@ pub struct Attention {
 impl Attention {
     init!(&str, "hole_v2:attention:{}");
 
-    pub async fn add(&mut self, pid: i32) -> RedisResult<()> {
-        self.rconn.sadd(&self.key, pid).await
-    }
+    add!(i32);
+
+    has!(i32);
 
     pub async fn remove(&mut self, pid: i32) -> RedisResult<()> {
         self.rconn.srem(&self.key, pid).await
-    }
-
-    pub async fn has(&mut self, pid: i32) -> RedisResult<bool> {
-        self.rconn.sismember(&self.key, pid).await
     }
 
     pub async fn all(&mut self) -> RedisResult<Vec<i32>> {
@@ -135,13 +155,9 @@ pub struct BlockedUsers {
 impl BlockedUsers {
     init!(i32, "hole_v2:blocked_users:{}");
 
-    pub async fn add(&mut self, namehash: &str) -> RedisResult<()> {
-        self.rconn.sadd(&self.key, namehash).await
-    }
+    add!(&str);
 
-    pub async fn has(&mut self, namehash: &str) -> RedisResult<bool> {
-        self.rconn.sismember(&self.key, namehash).await
-    }
+    has!(&str);
 
     pub async fn check_blocked(
         rconn: &RdsConn,
@@ -153,7 +169,7 @@ impl BlockedUsers {
             Some(id) => Self::init(id, rconn).has(author_hash).await?,
             None => false,
         } || (DangerousUser::has(rconn, author_hash).await?
-            && !DangerousUser::has(rconn,viewer_hash).await?))
+            && !DangerousUser::has(rconn, viewer_hash).await?))
     }
 }
 
@@ -206,7 +222,41 @@ impl CustomTitle {
     pub async fn clear(rconn: &RdsConn) -> RedisResult<()> {
         rconn.clone().del(KEY_CUSTOM_TITLE).await
     }
+}
 
+pub struct PollOption {
+    key: String,
+    rconn: RdsConn,
+}
+
+impl PollOption {
+    init!(i32, "hole_thu:poll_opts:{}");
+
+    pub async fn set_list(&mut self, v: &Vec<String>) -> RedisResult<()> {
+        self.rconn.del(&self.key).await?;
+        self.rconn.rpush(&self.key, v).await
+    }
+
+    pub async fn get_list(&mut self) -> RedisResult<Vec<String>> {
+        self.rconn.lrange(&self.key, 0, -1).await
+    }
+}
+
+pub struct PollVote {
+    key: String,
+    rconn: RdsConn,
+}
+
+impl PollVote {
+    init!(i32, usize, "hole_thu:poll_votes:{}:{}");
+
+    add!(&str);
+
+    has!(&str);
+
+    pub async fn count(&mut self) -> RedisResult<usize> {
+        self.rconn.scard(&self.key).await
+    }
 }
 
 pub(crate) use init;

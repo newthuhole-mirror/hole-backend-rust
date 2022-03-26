@@ -68,8 +68,5 @@ pub async fn get_attention(user: CurrentUser, db: Db, rconn: RdsConn) -> JsonAPI
     let ps = Post::get_multi(&db, &rconn, &ids).await?;
     let ps_data = ps2outputs(&ps, &user, &db, &rconn).await;
 
-    Ok(json!({
-        "code": 0,
-        "data": ps_data,
-    }))
+    code0!(ps_data)
 }
