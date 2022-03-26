@@ -1,7 +1,7 @@
 use crate::api::{CurrentUser, JsonAPI};
 use crate::random_hasher::RandomHasher;
 use crate::rds_conn::RdsConn;
-use crate::rds_models::Systemlog;
+use crate::rds_models::{Systemlog};
 use rocket::serde::json::{json, Value};
 use rocket::State;
 
@@ -19,7 +19,7 @@ pub async fn get_systemlog(user: CurrentUser, rh: &State<RandomHasher>, rconn: R
                 "type": log.action_type,
                 "user": look!(log.user_hash),
                 "timestamp": log.time.timestamp(),
-                "detail": format!("{}\n{}", &log.target, &log.detail)
+                "detail": format!("{}\n{}", &log.target, if user.is_admin || !log.action_type.contains_ugc()  { &log.detail } else { "" })
             })
         ).collect::<Vec<Value>>(),
     }))

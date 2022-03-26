@@ -48,6 +48,15 @@ pub enum LogType {
     Ban,
 }
 
+impl LogType {
+    pub fn contains_ugc(&self) -> bool {
+        match self {
+            Self::Report => true,
+            _ => false,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(crate = "rocket::serde")]
 pub struct Systemlog {

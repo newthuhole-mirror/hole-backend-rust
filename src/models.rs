@@ -48,18 +48,40 @@ macro_rules! _get_multi {
     };
 }
 
-macro_rules! set_deleted {
-    ($table:ident) => {
-        pub async fn set_deleted(&mut self, db: &Db) -> QueryResult<()> {
-            let id = self.id;
-            *self = db
-                .run(move |c| {
-                    diesel::update($table::table.find(id))
-                        .set($table::is_deleted.eq(true))
-                        .get_result(with_log!(c))
-                })
-                .await?;
-            Ok(())
+macro_rules! impl_update_method {
+    ($self:expr, $db:expr, $table:ident, $col:ident, $to:expr) => {{
+        let id = $self.id;
+        *$self = $db
+            .run(move |c| {
+                diesel::update($table::table.find(id))
+                    .set($table::$col.eq($to))
+                    .get_result(with_log!(c))
+            })
+            .await?;
+        Ok(())
+    }};
+}
+
+macro_rules! make_set_column {
+    ($table:ident { $({ $col:ident, $col_type:ty }), * }) => {
+        paste::paste! {
+            $(
+                pub async fn [< set_ $col>](&mut self, db: &Db, v: $col_type) -> QueryResult<()> {
+                    impl_update_method!(self, db, $table, $col, v)
+                }
+            )*
+        }
+    };
+}
+
+macro_rules! make_change_column {
+    ($table:ident { $({ $col:ident, $col_type:ty }), * }) => {
+        paste::paste! {
+            $(
+                pub async fn [< change_ $col>](&mut self, db: &Db, delta: $col_type) -> QueryResult<()> {
+                    impl_update_method!(self, db, $table, $col, $table::$col + delta)
+                }
+            )*
         }
     };
 }
@@ -138,7 +160,18 @@ impl Post {
 
     _get_multi!(posts);
 
-    set_deleted!(posts);
+    make_set_column!(posts {
+        {is_reported, bool},
+        {is_deleted, bool},
+        {cw, String},
+        {last_comment_time, DateTime<Utc>}
+    });
+
+    make_change_column!(posts {
+        {n_comments, i32},
+        {n_attentions, i32},
+        {hot_score, i32}
+    });
 
     pub async fn get_multi(db: &Db, rconn: &RdsConn, ids: &Vec<i32>) -> QueryResult<Vec<Self>> {
         let mut cacher = PostCache::init(&rconn);
@@ -305,73 +338,12 @@ impl Post {
     }
 
     pub async fn create(db: &Db, new_post: NewPost) -> QueryResult<Self> {
-        // TODO: tags
         db.run(move |c| {
             insert_into(posts::table)
                 .values(&new_post)
                 .get_result(with_log!(c))
         })
         .await
-    }
-
-    pub async fn update_cw(&mut self, db: &Db, new_cw: String) -> QueryResult<()> {
-        let pid = self.id;
-        *self = db
-            .run(move |c| {
-                diesel::update(posts::table.find(pid))
-                    .set(posts::cw.eq(new_cw))
-                    .get_result(with_log!(c))
-            })
-            .await?;
-        Ok(())
-    }
-
-    pub async fn update_comment_time(&mut self, db: &Db, t: DateTime<Utc>) -> QueryResult<()> {
-        let pid = self.id;
-        *self = db
-            .run(move |c| {
-                diesel::update(posts::table.find(pid))
-                    .set(posts::last_comment_time.eq(t))
-                    .get_result(with_log!(c))
-            })
-            .await?;
-        Ok(())
-    }
-
-    pub async fn change_n_comments(&mut self, db: &Db, delta: i32) -> QueryResult<()> {
-        let pid = self.id;
-        *self = db
-            .run(move |c| {
-                diesel::update(posts::table.find(pid))
-                    .set(posts::n_comments.eq(posts::n_comments + delta))
-                    .get_result(with_log!(c))
-            })
-            .await?;
-        Ok(())
-    }
-
-    pub async fn change_n_attentions(&mut self, db: &Db, delta: i32) -> QueryResult<()> {
-        let pid = self.id;
-        *self = db
-            .run(move |c| {
-                diesel::update(posts::table.find(pid))
-                    .set(posts::n_attentions.eq(posts::n_attentions + delta))
-                    .get_result(with_log!(c))
-            })
-            .await?;
-        Ok(())
-    }
-
-    pub async fn change_hot_score(&mut self, db: &Db, delta: i32) -> QueryResult<()> {
-        let pid = self.id;
-        *self = db
-            .run(move |c| {
-                diesel::update(posts::table.find(pid))
-                    .set(posts::hot_score.eq(posts::hot_score + delta))
-                    .get_result(with_log!(c))
-            })
-            .await?;
-        Ok(())
     }
 
     pub async fn set_instance_cache(&self, rconn: &RdsConn) {
@@ -438,7 +410,9 @@ pub struct NewComment {
 impl Comment {
     _get!(comments);
 
-    set_deleted!(comments);
+    make_set_column!(comments {
+        {is_deleted, bool}
+    });
 
     pub async fn get(db: &Db, id: i32) -> QueryResult<Self> {
         // no cache for single comment

@@ -19,7 +19,6 @@ pub fn catch_403_error() -> &'static str {
     "可能被封禁了，等下次重置吧"
 }
 
-
 pub struct CurrentUser {
     id: Option<i32>, // tmp user has no id, only for block
     namehash: String,
@@ -123,6 +122,12 @@ impl From<redis::RedisError> for APIError {
     }
 }
 
+impl From<PolicyError> for APIError {
+    fn from(err: PolicyError) -> APIError {
+        APIError::PcError(err)
+    }
+}
+
 pub type API<T> = Result<T, APIError>;
 pub type JsonAPI = API<Value>;
 
@@ -175,7 +180,7 @@ impl UGC for Post {
         self.n_comments == 0
     }
     async fn do_set_deleted(&mut self, db: &Db) -> API<()> {
-        self.set_deleted(db).await.map_err(From::from)
+        self.set_is_deleted(db, true).await.map_err(From::from)
     }
 }
 
@@ -194,7 +199,7 @@ impl UGC for Comment {
         true
     }
     async fn do_set_deleted(&mut self, db: &Db) -> API<()> {
-        self.set_deleted(db).await.map_err(From::from)
+        self.set_is_deleted(db, true).await.map_err(From::from)
     }
 }
 

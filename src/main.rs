@@ -1,3 +1,5 @@
+#![feature(concat_idents)]
+
 #[macro_use]
 extern crate rocket;
 
@@ -63,6 +65,7 @@ async fn main() -> Result<(), rocket::Error> {
                 api::attention::get_attention,
                 api::systemlog::get_systemlog,
                 api::operation::delete,
+                api::operation::report,
             ],
         )
         .register(

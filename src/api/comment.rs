@@ -1,4 +1,4 @@
-use crate::api::{APIError, CurrentUser, PolicyError::*, API, UGC};
+use crate::api::{APIError, CurrentUser, JsonAPI, PolicyError::*, UGC};
 use crate::db_conn::Db;
 use crate::models::*;
 use crate::rds_conn::RdsConn;
@@ -6,10 +6,7 @@ use crate::rds_models::*;
 use chrono::{offset::Utc, DateTime};
 use rocket::form::Form;
 use rocket::futures::{future::TryFutureExt, join, try_join};
-use rocket::serde::{
-    json::{json, Value},
-    Serialize,
-};
+use rocket::serde::{json::json, Serialize};
 use std::collections::HashMap;
 
 #[derive(FromForm)]
@@ -66,7 +63,7 @@ pub fn c2output<'r>(p: &'r Post, cs: &Vec<Comment>, user: &CurrentUser) -> Vec<C
 }
 
 #[get("/getcomment?<pid>")]
-pub async fn get_comment(pid: i32, user: CurrentUser, db: Db, rconn: RdsConn) -> API<Value> {
+pub async fn get_comment(pid: i32, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonAPI {
     let p = Post::get(&db, &rconn, pid).await?;
     if p.is_deleted {
         return Err(APIError::PcError(IsDeleted));
@@ -90,7 +87,7 @@ pub async fn add_comment(
     user: CurrentUser,
     db: Db,
     rconn: RdsConn,
-) -> API<Value> {
+) -> JsonAPI {
     let mut p = Post::get(&db, &rconn, ci.pid).await?;
     let c = Comment::create(
         &db,
@@ -104,7 +101,7 @@ pub async fn add_comment(
     )
     .await?;
     p.change_n_comments(&db, 1).await?;
-    p.update_comment_time(&db, c.create_time).await?;
+    p.set_last_comment_time(&db, c.create_time).await?;
     // auto attention after comment
     let mut att = Attention::init(&user.namehash, &rconn);
 

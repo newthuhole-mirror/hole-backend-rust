@@ -1,11 +1,11 @@
-use crate::api::{APIError, CurrentUser, PolicyError::*, API, UGC};
+use crate::api::{APIError, CurrentUser, JsonAPI, PolicyError::*, UGC};
 use crate::db_conn::Db;
 use crate::models::*;
 use crate::rds_conn::RdsConn;
 use crate::rds_models::*;
 use chrono::offset::Local;
 use rocket::form::Form;
-use rocket::serde::json::{json, Value};
+use rocket::serde::json::json;
 
 #[derive(FromForm)]
 pub struct DeleteInput {
@@ -16,12 +16,7 @@ pub struct DeleteInput {
 }
 
 #[post("/delete", data = "<di>")]
-pub async fn delete(
-    di: Form<DeleteInput>,
-    user: CurrentUser,
-    db: Db,
-    rconn: RdsConn,
-) -> API<Value> {
+pub async fn delete(di: Form<DeleteInput>, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonAPI {
     let mut p: Post;
     let mut c: Comment;
     let author_hash: &str;
@@ -74,6 +69,33 @@ pub async fn delete(
         }
     }
 
+    Ok(json!({
+        "code": 0
+    }))
+}
+
+#[derive(FromForm)]
+pub struct ReportInput {
+    pid: i32,
+    reason: String,
+}
+
+#[post("/report", data = "<ri>")]
+pub async fn report(ri: Form<ReportInput>, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonAPI {
+    // 临时用户不允许举报
+    user.id.ok_or_else(|| NotAllowed)?;
+
+    let mut p = Post::get(&db, &rconn, ri.pid).await?;
+    p.set_is_reported(&db, true).await?;
+    p.refresh_cache(&rconn, false).await;
+    Systemlog {
+        user_hash: user.namehash,
+        action_type: LogType::Report,
+        target: format!("#{} {}", ri.pid, if ri.reason.starts_with("评论区") { "评论区" } else {""}),
+        detail: ri.reason.clone(),
+        time: Local::now(),
+    }.create(&rconn)
+    .await?;
     Ok(json!({
         "code": 0
     }))

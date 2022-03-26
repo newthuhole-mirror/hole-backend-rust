@@ -1,5 +1,5 @@
 use crate::api::comment::{c2output, CommentOutput};
-use crate::api::{APIError, CurrentUser, JsonAPI, PolicyError::*, UGC};
+use crate::api::{CurrentUser, JsonAPI, UGC};
 use crate::db_conn::Db;
 use crate::models::*;
 use crate::rds_conn::RdsConn;
@@ -158,11 +158,8 @@ pub async fn publish_post(
 #[post("/editcw", data = "<cwi>")]
 pub async fn edit_cw(cwi: Form<CwInput>, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonAPI {
     let mut p = Post::get(&db, &rconn, cwi.pid).await?;
-    if !(user.is_admin || p.author_hash == user.namehash) {
-        return Err(APIError::PcError(NotAllowed));
-    }
     p.check_permission(&user, "w")?;
-    p.update_cw(&db, cwi.cw.to_string()).await?;
+    p.set_cw(&db, cwi.cw.to_string()).await?;
     p.refresh_cache(&rconn, false).await;
     Ok(json!({"code": 0}))
 }
