@@ -8,6 +8,7 @@ use crate::schema;
 use chrono::{offset::Utc, DateTime};
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use rocket::form::Form;
+use rocket::futures::future;
 use rocket::futures::join;
 use rocket::serde::{json::json, Serialize};
 use std::collections::HashMap;
@@ -30,39 +31,59 @@ pub struct CommentOutput {
     name_id: i32,
     is_tmp: bool,
     create_time: DateTime<Utc>,
+    is_blocked: bool,
+    blocked_count: Option<i32>,
     // for old version frontend
     timestamp: i64,
+    blocked: bool,
 }
 
-pub fn c2output<'r>(p: &'r Post, cs: &Vec<Comment>, user: &CurrentUser) -> Vec<CommentOutput> {
+pub async fn c2output<'r>(
+    p: &'r Post,
+    cs: &Vec<Comment>,
+    user: &CurrentUser,
+    rconn: &RdsConn,
+) -> Vec<CommentOutput> {
     let mut hash2id = HashMap::<&String, i32>::from([(&p.author_hash, 0)]);
-    cs.iter()
-        .filter_map(|c| {
-            let name_id: i32 = match hash2id.get(&c.author_hash) {
-                Some(id) => *id,
-                None => {
-                    let x = hash2id.len().try_into().unwrap();
-                    hash2id.insert(&c.author_hash, x);
-                    x
-                }
-            };
-            if c.is_deleted {
-                // TODO: block
-                None
-            } else {
-                Some(CommentOutput {
-                    cid: c.id,
-                    text: format!("{}{}", if c.is_tmp { "[tmp]\n" } else { "" }, c.content),
-                    author_title: c.author_title.to_string(),
-                    can_del: c.check_permission(user, "wd").is_ok(),
-                    name_id: name_id,
-                    is_tmp: c.is_tmp,
-                    create_time: c.create_time,
-                    timestamp: c.create_time.timestamp(),
-                })
-            }
-        })
-        .collect()
+    let name_ids_iter = cs.iter().map(|c| match hash2id.get(&c.author_hash) {
+        Some(id) => *id,
+        None => {
+            let x = hash2id.len().try_into().unwrap();
+            hash2id.insert(&c.author_hash, x);
+            x
+        }
+    });
+    future::join_all(cs.iter().zip(name_ids_iter).map(|(c, name_id)| async move {
+        if c.is_deleted {
+            None
+        } else {
+            let is_blocked =
+                BlockedUsers::check_blocked(rconn, user.id, &user.namehash, &c.author_hash)
+                    .await
+                    .unwrap_or_default();
+            Some(CommentOutput {
+                cid: c.id,
+                text: format!("{}{}", if c.is_tmp { "[tmp]\n" } else { "" }, c.content),
+                author_title: c.author_title.to_string(),
+                can_del: c.check_permission(user, "wd").is_ok(),
+                name_id: name_id,
+                is_tmp: c.is_tmp,
+                create_time: c.create_time,
+                is_blocked: is_blocked,
+                blocked_count: if user.is_admin {
+                    BlockCounter::get_count(rconn, &c.author_hash).await.ok()
+                } else {
+                    None
+                },
+                timestamp: c.create_time.timestamp(),
+                blocked: is_blocked,
+            })
+        }
+    }))
+    .await
+    .into_iter()
+    .filter_map(|x| x)
+    .collect()
 }
 
 #[get("/getcomment?<pid>")]
@@ -72,7 +93,7 @@ pub async fn get_comment(pid: i32, user: CurrentUser, db: Db, rconn: RdsConn) ->
         return Err(APIError::PcError(IsDeleted));
     }
     let cs = p.get_comments(&db, &rconn).await?;
-    let data = c2output(&p, &cs, &user);
+    let data = c2output(&p, &cs, &user, &rconn).await;
 
     Ok(json!({
         "code": 0,

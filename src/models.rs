@@ -218,8 +218,8 @@ impl Post {
         start: i64,
         limit: i64,
     ) -> QueryResult<Vec<Self>> {
-        let mut cacher = PostListCommentCache::init(order_mode, &rconn).await;
-        if cacher.need_fill() {
+        let mut cacher = PostListCommentCache::init(order_mode, &rconn);
+        if cacher.need_fill().await {
             let pids =
                 Self::_get_ids_by_page(db, order_mode.clone(), 0, cacher.i64_minlen()).await?;
             let ps = Self::get_multi(db, rconn, &pids).await?;
@@ -327,7 +327,6 @@ impl Post {
             self.set_instance_cache(rconn),
             future::join_all((if is_new { 0..4 } else { 1..4 }).map(|mode| async move {
                 PostListCommentCache::init(mode, &rconn.clone())
-                    .await
                     .put(self)
                     .await
             })),
@@ -342,7 +341,7 @@ impl Post {
             .unwrap();
 
         PostCache::init(&rconn).clear_all().await;
-        PostListCommentCache::init(2, rconn).await.clear().await
+        PostListCommentCache::init(2, rconn).clear().await
     }
 }
 

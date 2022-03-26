@@ -40,10 +40,13 @@ pub struct PostOutput {
     can_del: bool,
     attention: bool,
     hot_score: Option<i32>,
+    is_blocked: bool,
+    blocked_count: Option<i32>,
     // for old version frontend
     timestamp: i64,
     likenum: i32,
     reply: i32,
+    blocked: bool,
 }
 
 #[derive(FromForm)]
@@ -54,6 +57,9 @@ pub struct CwInput {
 }
 
 async fn p2output(p: &Post, user: &CurrentUser, db: &Db, rconn: &RdsConn) -> PostOutput {
+    let is_blocked = BlockedUsers::check_blocked(rconn, user.id, &user.namehash, &p.author_hash)
+        .await
+        .unwrap_or_default();
     PostOutput {
         pid: p.id,
         text: format!("{}{}", if p.is_tmp { "[tmp]\n" } else { "" }, p.content),
@@ -70,10 +76,15 @@ async fn p2output(p: &Post, user: &CurrentUser, db: &Db, rconn: &RdsConn) -> Pos
             None
         } else {
             // 单个洞还有查询评论的接口，这里挂了不用报错
-            p.get_comments(db, rconn)
-                .await
-                .ok()
-                .map(|cs| c2output(p, &cs, user))
+            Some(
+                c2output(
+                    p,
+                    &p.get_comments(db, rconn).await.unwrap_or(vec![]),
+                    user,
+                    rconn,
+                )
+                .await,
+            )
         },
         can_del: p.check_permission(user, "wd").is_ok(),
         attention: Attention::init(&user.namehash, &rconn)
@@ -81,10 +92,17 @@ async fn p2output(p: &Post, user: &CurrentUser, db: &Db, rconn: &RdsConn) -> Pos
             .await
             .unwrap_or_default(),
         hot_score: user.is_admin.then(|| p.hot_score),
+        is_blocked: is_blocked,
+        blocked_count: if user.is_admin {
+            BlockCounter::get_count(rconn, &p.author_hash).await.ok()
+        } else {
+            None
+        },
         // for old version frontend
         timestamp: p.create_time.timestamp(),
         likenum: p.n_attentions,
         reply: p.n_comments,
+        blocked: is_blocked,
     }
 }
 
@@ -153,9 +171,7 @@ pub async fn publish_post(
     .await?;
     Attention::init(&user.namehash, &rconn).add(p.id).await?;
     p.refresh_cache(&rconn, true).await;
-    Ok(json!({
-        "code": 0
-    }))
+    code0!()
 }
 
 #[post("/editcw", data = "<cwi>")]
@@ -164,7 +180,7 @@ pub async fn edit_cw(cwi: Form<CwInput>, user: CurrentUser, db: Db, rconn: RdsCo
     p.check_permission(&user, "w")?;
     update!(p, posts, &db, { cw, to cwi.cw.to_string() });
     p.refresh_cache(&rconn, false).await;
-    Ok(json!({"code": 0}))
+    code0!()
 }
 
 #[get("/getmulti?<pids>")]

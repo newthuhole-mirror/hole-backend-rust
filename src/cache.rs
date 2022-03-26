@@ -1,5 +1,6 @@
 use crate::models::{Comment, Post, User};
 use crate::rds_conn::RdsConn;
+use crate::rds_models::init;
 use rand::Rng;
 use redis::AsyncCommands;
 use rocket::serde::json::serde_json;
@@ -9,6 +10,7 @@ const INSTANCE_EXPIRE_TIME: usize = 60 * 60;
 
 const MIN_LENGTH: isize = 200;
 const MAX_LENGTH: isize = 900;
+const CUT_LENGTH: isize = 100;
 
 macro_rules! post_cache_key {
     ($id: expr) => {
@@ -21,11 +23,7 @@ pub struct PostCache {
 }
 
 impl PostCache {
-    pub fn init(rconn: &RdsConn) -> Self {
-        PostCache {
-            rconn: rconn.clone(),
-        }
-    }
+    init!();
 
     pub async fn sets(&mut self, ps: &Vec<&Post>) {
         if ps.is_empty() {
@@ -98,9 +96,13 @@ impl PostCache {
     }
 
     pub async fn clear_all(&mut self) {
-        let mut keys = self.rconn.scan_match::<String, String>(post_cache_key!("*")).await.unwrap(); //.collect::<Vec<String>>().await;
-        // colllect() does not work
-        // also see: https://github.com/mitsuhiko/redis-rs/issues/583
+        let mut keys = self
+            .rconn
+            .scan_match::<String, String>(post_cache_key!("*"))
+            .await
+            .unwrap(); //.collect::<Vec<String>>().await;
+                       // colllect() does not work
+                       // also see: https://github.com/mitsuhiko/redis-rs/issues/583
         let mut ks_for_del = Vec::new();
         while let Some(key) = keys.next_item().await {
             ks_for_del.push(key);
@@ -108,9 +110,10 @@ impl PostCache {
         if ks_for_del.is_empty() {
             return;
         }
-        self.rconn.del(ks_for_del).await.unwrap_or_else(|e| {
-            warn!("clear all post cache fail, {}", e)
-        });
+        self.rconn
+            .del(ks_for_del)
+            .await
+            .unwrap_or_else(|e| warn!("clear all post cache fail, {}", e));
     }
 }
 
@@ -120,12 +123,7 @@ pub struct PostCommentCache {
 }
 
 impl PostCommentCache {
-    pub fn init(pid: i32, rconn: &RdsConn) -> Self {
-        PostCommentCache {
-            key: format!("hole_v2:cache:post_comments:{}", pid),
-            rconn: rconn.clone(),
-        }
-    }
+    init!(i32, "hole_v2:cache:post_comments:{}");
 
     pub async fn set(&mut self, cs: &Vec<Comment>) {
         self.rconn
@@ -179,22 +177,20 @@ pub struct PostListCommentCache {
 }
 
 impl PostListCommentCache {
-    pub async fn init(mode: u8, rconn: &RdsConn) -> Self {
-        let mut cacher = PostListCommentCache {
+    pub fn init(mode: u8, rconn: &RdsConn) -> Self {
+        Self {
             key: format!("hole_v2:cache:post_list:{}", &mode),
             mode: mode,
             rconn: rconn.clone(),
             length: 0,
-        };
-        cacher.set_and_check_length().await;
-        cacher
+        }
     }
 
     async fn set_and_check_length(&mut self) {
         let mut l = self.rconn.zcard(&self.key).await.unwrap();
         if l > MAX_LENGTH {
             self.rconn
-                .zremrangebyrank::<&String, ()>(&self.key, MIN_LENGTH, -1)
+                .zremrangebyrank::<&String, ()>(&self.key, MAX_LENGTH - CUT_LENGTH, -1)
                 .await
                 .unwrap_or_else(|e| {
                     warn!("cut list cache failed, {}, {}", e, &self.key);
@@ -204,7 +200,8 @@ impl PostListCommentCache {
         self.length = l;
     }
 
-    pub fn need_fill(&self) -> bool {
+    pub async fn need_fill(&mut self) -> bool {
+        self.set_and_check_length().await;
         self.length < MIN_LENGTH
     }
 
@@ -244,7 +241,7 @@ impl PostListCommentCache {
     pub async fn put(&mut self, p: &Post) {
         // 其他都是加到最前面的，但热榜不是。可能导致MIN_LENGTH到MAX_LENGTH之间的数据不可靠
         // 影响不大，先不管了
-        if p.is_deleted  || (self.mode > 0 && p.is_reported) {
+        if p.is_deleted || (self.mode > 0 && p.is_reported) {
             self.rconn.zrem(&self.key, p.id).await.unwrap_or_else(|e| {
                 warn!(
                     "remove from list cache failed, {} {} {}",
@@ -286,12 +283,7 @@ pub struct UserCache {
 }
 
 impl UserCache {
-    pub fn init(token: &str, rconn: &RdsConn) -> Self {
-        UserCache {
-            key: format!("hole_v2:cache:user:{}", token),
-            rconn: rconn.clone(),
-        }
-    }
+    init!(&str, "hole_v2:cache:user:{}");
 
     pub async fn set(&mut self, u: &User) {
         self.rconn

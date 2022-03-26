@@ -12,6 +12,12 @@ use rocket::request::{FromRequest, Outcome, Request};
 use rocket::response::{self, Responder};
 use rocket::serde::json::{json, Value};
 
+macro_rules! code0 {
+    () => (
+        Ok(json!({"code": 0}))
+    );
+}
+
 #[catch(401)]
 pub fn catch_401_error() -> &'static str {
     "未登录或token过期"

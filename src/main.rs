@@ -66,6 +66,7 @@ async fn main() -> Result<(), rocket::Error> {
                 api::systemlog::get_systemlog,
                 api::operation::delete,
                 api::operation::report,
+                api::operation::block,
             ],
         )
         .register(
