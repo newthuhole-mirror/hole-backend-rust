@@ -5,6 +5,7 @@ use rocket::serde::json::serde_json;
 use rocket::serde::{Deserialize, Serialize};
 
 const KEY_SYSTEMLOG: &str = "hole_v2:systemlog_list";
+const KEY_BANNED_USERS: &str = "hole_v2:banned_user_hash_list";
 const SYSTEMLOG_MAX_LEN: isize = 1000;
 
 pub struct Attention {
@@ -35,6 +36,8 @@ impl Attention {
     pub async fn all(&mut self) -> RedisResult<Vec<i32>> {
         self.rconn.smembers(&self.key).await
     }
+
+    // TODO: clear all
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -42,9 +45,8 @@ impl Attention {
 pub enum LogType {
     AdminDelete,
     Report,
-    Ban
+    Ban,
 }
-
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(crate = "rocket::serde")]
@@ -76,5 +78,24 @@ impl Systemlog {
             .iter()
             .map(|s| serde_json::from_str(s).unwrap())
             .collect())
+    }
+}
+
+pub struct BannedUsers;
+
+impl BannedUsers {
+    pub async fn add(rconn: &RdsConn, namehash: &str) -> RedisResult<()> {
+        rconn
+            .clone()
+            .sadd::<&str, &str, ()>(KEY_BANNED_USERS, namehash)
+            .await
+    }
+
+    pub async fn has(rconn: &RdsConn, namehash: &str) -> RedisResult<bool> {
+        rconn.clone().sismember(KEY_BANNED_USERS, namehash).await
+    }
+
+    pub async fn clear(rconn: &RdsConn) -> RedisResult<()> {
+        rconn.clone().del(KEY_BANNED_USERS).await
     }
 }

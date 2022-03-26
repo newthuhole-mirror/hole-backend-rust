@@ -23,7 +23,7 @@ mod schema;
 use db_conn::{establish_connection, Conn, Db};
 use diesel::Connection;
 use random_hasher::RandomHasher;
-use rds_conn::init_rds_client;
+use rds_conn::{init_rds_client, RdsConn};
 use std::env;
 use tokio::time::{interval, Duration};
 
@@ -38,7 +38,8 @@ async fn main() -> Result<(), rocket::Error> {
     }
     env_logger::init();
     let rmc = init_rds_client().await;
-    let rconn = rds_conn::RdsConn(rmc.clone());
+    let rconn = RdsConn(rmc.clone());
+    clear_outdate_redis_data(&rconn.clone()).await;
     tokio::spawn(async move {
         let mut itv = interval(Duration::from_secs(4 * 60 * 60));
         loop {
@@ -64,7 +65,10 @@ async fn main() -> Result<(), rocket::Error> {
                 api::operation::delete,
             ],
         )
-        .register("/_api", catchers![api::catch_401_error])
+        .register(
+            "/_api",
+            catchers![api::catch_401_error, api::catch_403_error,],
+        )
         .manage(RandomHasher::get_random_one())
         .manage(rmc)
         .attach(Db::fairing())
@@ -84,4 +88,8 @@ fn init_database() {
     let database_url = env::var("DATABASE_URL").unwrap();
     let conn = Conn::establish(&database_url).unwrap();
     embedded_migrations::run(&conn).unwrap();
+}
+
+async fn clear_outdate_redis_data(rconn: &RdsConn) {
+    rds_models::BannedUsers::clear(&rconn).await.unwrap();
 }

@@ -49,9 +49,9 @@ pub async fn delete(
         _ => return Err(APIError::PcError(NotAllowed)),
     }
 
-    if user.is_admin && author_hash != user.namehash {
+    if user.is_admin && !user.namehash.eq(author_hash) {
         Systemlog {
-            user_hash: user.namehash,
+            user_hash: user.namehash.clone(),
             action_type: LogType::AdminDelete,
             target: format!("#{}, {}={}", p.id, di.id_type, di.id),
             detail: di.note.clone(),
@@ -59,6 +59,19 @@ pub async fn delete(
         }
         .create(&rconn)
         .await?;
+
+        if di.note.starts_with("!ban ") {
+            Systemlog {
+                user_hash: user.namehash.clone(),
+                action_type: LogType::Ban,
+                target: look!(author_hash),
+                detail: di.note.clone(),
+                time: Local::now(),
+            }
+            .create(&rconn)
+            .await?;
+            BannedUsers::add(&rconn, author_hash).await?;
+        }
     }
 
     Ok(json!({

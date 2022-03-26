@@ -2,6 +2,7 @@ use crate::db_conn::Db;
 use crate::models::*;
 use crate::random_hasher::RandomHasher;
 use crate::rds_conn::RdsConn;
+use crate::rds_models::BannedUsers;
 use rocket::http::Status;
 use rocket::outcome::try_outcome;
 use rocket::request::{FromRequest, Outcome, Request};
@@ -12,6 +13,12 @@ use rocket::serde::json::{json, Value};
 pub fn catch_401_error() -> &'static str {
     "未登录或token过期"
 }
+
+#[catch(403)]
+pub fn catch_403_error() -> &'static str {
+    "可能被封禁了，等下次重置吧"
+}
+
 
 pub struct CurrentUser {
     id: Option<i32>, // tmp user has no id, only for block
@@ -25,34 +32,40 @@ impl<'r> FromRequest<'r> for CurrentUser {
     type Error = ();
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
         let rh = request.rocket().state::<RandomHasher>().unwrap();
-        let mut cu: Option<CurrentUser> = None;
+        let rconn = try_outcome!(request.guard::<RdsConn>().await);
+
+        let mut id = None;
+        let mut namehash = None;
+        let mut is_admin = false;
 
         if let Some(token) = request.headers().get_one("User-Token") {
             let sp = token.split('_').collect::<Vec<&str>>();
             if sp.len() == 2 && sp[0] == rh.get_tmp_token() {
-                let namehash = rh.hash_with_salt(sp[1]);
-                cu = Some(CurrentUser {
-                    id: None,
-                    custom_title: format!("TODO: {}", &namehash),
-                    namehash: namehash,
-                    is_admin: false,
-                });
+                namehash = Some(rh.hash_with_salt(sp[1]));
+                id = None;
+                is_admin = false;
             } else {
                 let db = try_outcome!(request.guard::<Db>().await);
-                let rconn = try_outcome!(request.guard::<RdsConn>().await);
-                if let Some(user) = User::get_by_token(&db, &rconn, token).await {
-                    let namehash = rh.hash_with_salt(&user.name);
-                    cu = Some(CurrentUser {
-                        id: Some(user.id),
-                        custom_title: format!("TODO: {}", &namehash),
-                        namehash: namehash,
-                        is_admin: user.is_admin,
-                    });
+                if let Some(u) = User::get_by_token(&db, &rconn, token).await {
+                    id = Some(u.id);
+                    namehash = Some(rh.hash_with_salt(&u.name));
+                    is_admin = u.is_admin;
                 }
             }
         }
-        match cu {
-            Some(u) => Outcome::Success(u),
+        match namehash {
+            Some(nh) => {
+                if BannedUsers::has(&rconn, &nh).await.unwrap() {
+                    Outcome::Failure((Status::Forbidden, ()))
+                } else {
+                    Outcome::Success(CurrentUser {
+                        id: id,
+                        custom_title: format!("title todo: {}", &nh),
+                        namehash: nh,
+                        is_admin: is_admin,
+                    })
+                }
+            }
             None => Outcome::Failure((Status::Unauthorized, ())),
         }
     }
