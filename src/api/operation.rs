@@ -6,6 +6,9 @@ use crate::rds_models::*;
 use chrono::offset::Local;
 use rocket::form::Form;
 use rocket::serde::json::json;
+use crate::libs::diesel_logger::LoggingConnection;
+use crate::schema;
+use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 
 #[derive(FromForm)]
 pub struct DeleteInput {
@@ -25,8 +28,13 @@ pub async fn delete(di: Form<DeleteInput>, user: CurrentUser, db: Db, rconn: Rds
             c = Comment::get(&db, di.id).await?;
             c.soft_delete(&user, &db).await?;
             p = Post::get(&db, &rconn, c.post_id).await?;
-            p.change_n_comments(&db, -1).await?;
-            p.change_hot_score(&db, -1).await?;
+            update!(
+                p,
+                posts,
+                &db,
+                { n_comments, add -1 },
+                { hot_score, add -1 }
+            );
 
             p.refresh_cache(&rconn, false).await;
             p.clear_comments_cache(&rconn).await;
@@ -86,7 +94,7 @@ pub async fn report(ri: Form<ReportInput>, user: CurrentUser, db: Db, rconn: Rds
     user.id.ok_or_else(|| NotAllowed)?;
 
     let mut p = Post::get(&db, &rconn, ri.pid).await?;
-    p.set_is_reported(&db, true).await?;
+    update!(p, posts, &db, { is_reported, to true });
     p.refresh_cache(&rconn, false).await;
     Systemlog {
         user_hash: user.namehash,

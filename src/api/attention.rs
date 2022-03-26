@@ -1,9 +1,12 @@
 use crate::api::post::ps2outputs;
 use crate::api::{CurrentUser, JsonAPI, PolicyError::*, UGC};
 use crate::db_conn::Db;
+use crate::libs::diesel_logger::LoggingConnection;
 use crate::models::*;
 use crate::rds_conn::RdsConn;
 use crate::rds_models::*;
+use crate::schema;
+use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use rocket::form::Form;
 use rocket::serde::json::json;
 
@@ -37,10 +40,15 @@ pub async fn attention_post(
             att.remove(ai.pid).await?;
             delta = -1;
         }
-        p.change_n_attentions(&db, delta).await?;
-        p.change_hot_score(&db, delta * 2).await?;
+        update!(
+            p,
+            posts,
+            &db,
+            { n_attentions, add delta },
+            { hot_score, add delta * 2 }
+        );
         if switch_to && user.is_admin {
-            p.set_is_reported(&db, false).await?;
+            update!(p, posts, &db, { is_reported, to false });
         }
         p.refresh_cache(&rconn, false).await;
     }

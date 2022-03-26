@@ -1,8 +1,11 @@
 use crate::db_conn::Db;
+use crate::libs::diesel_logger::LoggingConnection;
 use crate::models::*;
 use crate::random_hasher::RandomHasher;
 use crate::rds_conn::RdsConn;
 use crate::rds_models::BannedUsers;
+use crate::schema;
+use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use rocket::http::Status;
 use rocket::outcome::try_outcome;
 use rocket::request::{FromRequest, Outcome, Request};
@@ -180,7 +183,8 @@ impl UGC for Post {
         self.n_comments == 0
     }
     async fn do_set_deleted(&mut self, db: &Db) -> API<()> {
-        self.set_is_deleted(db, true).await.map_err(From::from)
+        update!(*self, posts, db, { is_deleted, to true });
+        Ok(())
     }
 }
 
@@ -199,7 +203,8 @@ impl UGC for Comment {
         true
     }
     async fn do_set_deleted(&mut self, db: &Db) -> API<()> {
-        self.set_is_deleted(db, true).await.map_err(From::from)
+        update!(*self, comments, db, { is_deleted, to true });
+        Ok(())
     }
 }
 

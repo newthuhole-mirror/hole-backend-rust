@@ -1,10 +1,13 @@
 use crate::api::comment::{c2output, CommentOutput};
 use crate::api::{CurrentUser, JsonAPI, UGC};
 use crate::db_conn::Db;
+use crate::libs::diesel_logger::LoggingConnection;
 use crate::models::*;
 use crate::rds_conn::RdsConn;
 use crate::rds_models::*;
+use crate::schema;
 use chrono::{offset::Utc, DateTime};
+use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use rocket::form::Form;
 use rocket::futures::future;
 use rocket::serde::{json::json, Serialize};
@@ -159,7 +162,7 @@ pub async fn publish_post(
 pub async fn edit_cw(cwi: Form<CwInput>, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonAPI {
     let mut p = Post::get(&db, &rconn, cwi.pid).await?;
     p.check_permission(&user, "w")?;
-    p.set_cw(&db, cwi.cw.to_string()).await?;
+    update!(p, posts, &db, { cw, to cwi.cw.to_string() });
     p.refresh_cache(&rconn, false).await;
     Ok(json!({"code": 0}))
 }

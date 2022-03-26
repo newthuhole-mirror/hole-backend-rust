@@ -48,42 +48,29 @@ macro_rules! _get_multi {
     };
 }
 
-macro_rules! impl_update_method {
-    ($self:expr, $db:expr, $table:ident, $col:ident, $to:expr) => {{
-        let id = $self.id;
-        *$self = $db
+macro_rules! op_to_col_expr {
+    ($col_obj:expr, to $v:expr) => {
+        $v
+    };
+    ($col_obj:expr, add $v:expr) => {
+        $col_obj + $v
+    };
+}
+
+macro_rules! update {
+    ($obj:expr, $table:ident, $db:expr, $({ $col:ident, $op:ident $v:expr }), + ) => {{
+        let id = $obj.id;
+        $obj = $db
             .run(move |c| {
-                diesel::update($table::table.find(id))
-                    .set($table::$col.eq($to))
+                diesel::update(schema::$table::table.find(id))
+                    .set((
+                        $(schema::$table::$col.eq(op_to_col_expr!(schema::$table::$col, $op $v))), +
+                    ))
                     .get_result(with_log!(c))
             })
             .await?;
-        Ok(())
-    }};
-}
 
-macro_rules! make_set_column {
-    ($table:ident { $({ $col:ident, $col_type:ty }), * }) => {
-        paste::paste! {
-            $(
-                pub async fn [< set_ $col>](&mut self, db: &Db, v: $col_type) -> QueryResult<()> {
-                    impl_update_method!(self, db, $table, $col, v)
-                }
-            )*
-        }
-    };
-}
-
-macro_rules! make_change_column {
-    ($table:ident { $({ $col:ident, $col_type:ty }), * }) => {
-        paste::paste! {
-            $(
-                pub async fn [< change_ $col>](&mut self, db: &Db, delta: $col_type) -> QueryResult<()> {
-                    impl_update_method!(self, db, $table, $col, $table::$col + delta)
-                }
-            )*
-        }
-    };
+        }};
 }
 
 macro_rules! base_query {
@@ -152,26 +139,12 @@ pub struct NewPost {
     pub is_tmp: bool,
     pub n_attentions: i32,
     pub allow_search: bool,
-    // TODO: tags
 }
 
 impl Post {
     _get!(posts);
 
     _get_multi!(posts);
-
-    make_set_column!(posts {
-        {is_reported, bool},
-        {is_deleted, bool},
-        {cw, String},
-        {last_comment_time, DateTime<Utc>}
-    });
-
-    make_change_column!(posts {
-        {n_comments, i32},
-        {n_attentions, i32},
-        {hot_score, i32}
-    });
 
     pub async fn get_multi(db: &Db, rconn: &RdsConn, ids: &Vec<i32>) -> QueryResult<Vec<Self>> {
         let mut cacher = PostCache::init(&rconn);
@@ -410,10 +383,6 @@ pub struct NewComment {
 impl Comment {
     _get!(comments);
 
-    make_set_column!(comments {
-        {is_deleted, bool}
-    });
-
     pub async fn get(db: &Db, id: i32) -> QueryResult<Self> {
         // no cache for single comment
         Self::_get(db, id).await
@@ -439,3 +408,5 @@ impl Comment {
         .await
     }
 }
+
+pub(crate) use {op_to_col_expr, update, with_log};

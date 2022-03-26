@@ -1,11 +1,14 @@
 use crate::api::{APIError, CurrentUser, JsonAPI, PolicyError::*, UGC};
 use crate::db_conn::Db;
+use crate::libs::diesel_logger::LoggingConnection;
 use crate::models::*;
 use crate::rds_conn::RdsConn;
 use crate::rds_models::*;
+use crate::schema;
 use chrono::{offset::Utc, DateTime};
+use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use rocket::form::Form;
-use rocket::futures::{future::TryFutureExt, join, try_join};
+use rocket::futures::join;
 use rocket::serde::{json::json, Serialize};
 use std::collections::HashMap;
 
@@ -100,26 +103,30 @@ pub async fn add_comment(
         },
     )
     .await?;
-    p.change_n_comments(&db, 1).await?;
-    p.set_last_comment_time(&db, c.create_time).await?;
-    // auto attention after comment
-    let mut att = Attention::init(&user.namehash, &rconn);
 
-    let mut hs_delta = 1;
+    let mut att = Attention::init(&user.namehash, &rconn);
+    let hs_delta;
+    let at_delta;
 
     if !att.has(p.id).await? {
-        hs_delta += 2;
-        try_join!(
-            att.add(p.id).err_into::<APIError>(),
-            async {
-                p.change_n_attentions(&db, 1).await?;
-                Ok::<(), APIError>(())
-            }
-            .err_into::<APIError>(),
-        )?;
+        hs_delta = 3;
+        at_delta = 1;
+        att.add(p.id).await?;
+    } else {
+        hs_delta = 1;
+        at_delta = 0;
     }
 
-    p.change_hot_score(&db, hs_delta).await?;
+    update!(
+        p,
+        posts,
+        &db,
+        { n_comments, add 1 },
+        { last_comment_time, to c.create_time },
+        { n_attentions, add at_delta },
+        { hot_score, add hs_delta }
+    );
+
     join!(
         p.refresh_cache(&rconn, false),
         p.clear_comments_cache(&rconn),
