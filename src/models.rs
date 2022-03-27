@@ -273,7 +273,8 @@ impl Post {
                 let mut query = base_query!(posts)
                     .select(posts::id)
                     .distinct()
-                    .left_join(comments::table);
+                    .left_join(comments::table)
+                    .filter(posts::is_reported.eq(false));
                 // 先用搜索+缓存，性能有问题了再真的做tag表
                 query = match search_mode {
                     0 => {
