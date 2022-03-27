@@ -16,6 +16,7 @@ mod api;
 mod cache;
 mod db_conn;
 mod libs;
+mod login;
 mod models;
 mod random_hasher;
 mod rds_conn;
@@ -27,7 +28,7 @@ use diesel::Connection;
 use random_hasher::RandomHasher;
 use rds_conn::{init_rds_client, RdsConn};
 use std::env;
-use tokio::time::{interval, Duration};
+use tokio::time::{sleep, Duration};
 
 embed_migrations!("migrations/postgres");
 
@@ -43,9 +44,8 @@ async fn main() -> Result<(), rocket::Error> {
     let rconn = RdsConn(rmc.clone());
     clear_outdate_redis_data(&rconn.clone()).await;
     tokio::spawn(async move {
-        let mut itv = interval(Duration::from_secs(4 * 60 * 60));
         loop {
-            itv.tick().await;
+            sleep(Duration::from_secs(4 * 60 * 60)).await;
             models::Post::annealing(establish_connection(), &rconn).await;
         }
     });
@@ -71,6 +71,7 @@ async fn main() -> Result<(), rocket::Error> {
                 api::vote::vote,
             ],
         )
+        .mount("/_login", routes![login::cs_login, login::cs_auth])
         .register(
             "/_api",
             catchers![api::catch_401_error, api::catch_403_error,],

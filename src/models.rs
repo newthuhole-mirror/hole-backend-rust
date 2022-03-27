@@ -3,6 +3,7 @@
 use crate::cache::*;
 use crate::db_conn::{Conn, Db};
 use crate::libs::diesel_logger::LoggingConnection;
+use crate::random_hasher::random_string;
 use crate::rds_conn::RdsConn;
 use crate::schema::*;
 use chrono::{offset::Utc, DateTime};
@@ -367,6 +368,38 @@ impl User {
             cacher.set(&u).await;
             Some(u)
         }
+    }
+
+    pub async fn find_or_create_token(
+        db: &Db,
+        name: &str,
+        force_refresh: bool,
+    ) -> QueryResult<String> {
+        let name = name.to_string();
+        db.run(move |c| {
+            if let Some(u) = {
+                if force_refresh {
+                    None
+                } else {
+                    users::table
+                        .filter(users::name.eq(&name))
+                        .first::<Self>(with_log!(c))
+                        .ok()
+                }
+            } {
+                Ok(u.token)
+            } else {
+                let token = random_string(16);
+                diesel::insert_into(users::table)
+                    .values((users::name.eq(&name), users::token.eq(&token)))
+                    .on_conflict(users::name)
+                    .do_update()
+                    .set(users::token.eq(&token))
+                    .execute(with_log!(c))?;
+                Ok(token)
+            }
+        })
+        .await
     }
 }
 

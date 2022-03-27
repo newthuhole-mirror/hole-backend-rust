@@ -2,6 +2,14 @@ use chrono::{offset::Local, DateTime};
 use rand::{distributions::Alphanumeric, thread_rng, Rng};
 use sha2::{Digest, Sha256};
 
+pub fn random_string(len: usize) -> String {
+    thread_rng()
+        .sample_iter(&Alphanumeric)
+        .take(len)
+        .map(char::from)
+        .collect()
+}
+
 pub struct RandomHasher {
     pub salt: String,
     pub start_time: DateTime<Local>,
@@ -10,11 +18,7 @@ pub struct RandomHasher {
 impl RandomHasher {
     pub fn get_random_one() -> RandomHasher {
         RandomHasher {
-            salt: thread_rng()
-                .sample_iter(&Alphanumeric)
-                .take(16)
-                .map(char::from)
-                .collect(),
+            salt: random_string(16),
             start_time: Local::now(),
         }
     }
