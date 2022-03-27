@@ -72,6 +72,7 @@ pub async fn delete(di: Form<DeleteInput>, user: CurrentUser, db: Db, rconn: Rds
             .create(&rconn)
             .await?;
             BannedUsers::add(&rconn, &author_hash).await?;
+            DangerousUser::add(&rconn, &author_hash).await?;
         }
     }
 
