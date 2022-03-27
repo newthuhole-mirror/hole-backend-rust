@@ -64,7 +64,8 @@ pub async fn attention_post(
 
 #[get("/getattention")]
 pub async fn get_attention(user: CurrentUser, db: Db, rconn: RdsConn) -> JsonAPI {
-    let ids = Attention::init(&user.namehash, &rconn).all().await?;
+    let mut ids = Attention::init(&user.namehash, &rconn).all().await?;
+    ids.sort_by_key(|x| -x);
     let ps = Post::get_multi(&db, &rconn, &ids).await?;
     let ps_data = ps2outputs(&ps, &user, &db, &rconn).await;
 
