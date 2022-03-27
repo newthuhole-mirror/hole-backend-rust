@@ -61,9 +61,14 @@ pub async fn c2output<'r>(
                 BlockedUsers::check_blocked(rconn, user.id, &user.namehash, &c.author_hash)
                     .await
                     .unwrap_or_default();
+            let can_view = !is_blocked && user.id.is_some() || user.namehash.eq(&c.author_hash);
             Some(CommentOutput {
                 cid: c.id,
-                text: format!("{}{}", if c.is_tmp { "[tmp]\n" } else { "" }, c.content),
+                text: format!(
+                    "{}{}",
+                    if c.is_tmp { "[tmp]\n" } else { "" },
+                    if can_view { &c.content } else { "" }
+                ),
                 author_title: c.author_title.to_string(),
                 can_del: c.check_permission(user, "wd").is_ok(),
                 name_id: name_id,

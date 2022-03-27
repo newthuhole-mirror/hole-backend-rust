@@ -124,6 +124,8 @@ pub struct BlockInput {
 
 #[post("/block", data = "<bi>")]
 pub async fn block(bi: Form<BlockInput>, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonAPI {
+    user.id.ok_or_else(|| NotAllowed)?;
+
     let mut blk = BlockedUsers::init(user.id.ok_or_else(|| NotAllowed)?, &rconn);
 
     let nh_to_block = match bi.content_type.as_str() {

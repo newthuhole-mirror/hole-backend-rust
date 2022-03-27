@@ -47,6 +47,8 @@ pub struct VoteInput {
 
 #[post("/vote", data = "<vi>")]
 pub async fn vote(vi: Form<VoteInput>, user: CurrentUser, rconn: RdsConn) -> JsonAPI {
+    user.id.ok_or_else(|| NotAllowed)?;
+
     let pid = vi.pid;
     let opts = PollOption::init(pid, &rconn).get_list().await?;
     if opts.is_empty() {

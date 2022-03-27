@@ -92,6 +92,7 @@ pub enum PolicyError {
     IsDeleted,
     NotAllowed,
     TitleUsed,
+    YouAreTmp,
 }
 
 #[derive(Debug)]
@@ -121,6 +122,7 @@ impl<'r> Responder<'r, 'static> for APIError {
                     PolicyError::IsDeleted => "内容被删除",
                     PolicyError::NotAllowed => "不允许的操作",
                     PolicyError::TitleUsed => "头衔已被使用",
+                    PolicyError::YouAreTmp => "临时用户只可发布内容和进入单个洞"
                 }
             })
             .respond_to(req),

@@ -1,6 +1,6 @@
 use crate::api::comment::{c2output, CommentOutput};
 use crate::api::vote::get_poll_dict;
-use crate::api::{CurrentUser, JsonAPI, UGC};
+use crate::api::{CurrentUser, JsonAPI, UGC, PolicyError::*};
 use crate::db_conn::Db;
 use crate::libs::diesel_logger::LoggingConnection;
 use crate::models::*;
@@ -67,9 +67,14 @@ async fn p2output(p: &Post, user: &CurrentUser, db: &Db, rconn: &RdsConn) -> Pos
     let is_blocked = BlockedUsers::check_blocked(rconn, user.id, &user.namehash, &p.author_hash)
         .await
         .unwrap_or_default();
+    let can_view = !is_blocked && user.id.is_some() || user.namehash.eq(&p.author_hash);
     PostOutput {
         pid: p.id,
-        text: format!("{}{}", if p.is_tmp { "[tmp]\n" } else { "" }, p.content),
+        text: format!(
+            "{}{}",
+            if p.is_tmp { "[tmp]\n" } else { "" },
+            if can_view { &p.content } else { "" }
+        ),
         cw: (!p.cw.is_empty()).then(|| p.cw.to_string()),
         n_attentions: p.n_attentions,
         n_comments: p.n_comments,
@@ -105,7 +110,11 @@ async fn p2output(p: &Post, user: &CurrentUser, db: &Db, rconn: &RdsConn) -> Pos
         } else {
             None
         },
-        poll: get_poll_dict(p.id, rconn, &user.namehash).await,
+        poll: if can_view {
+            get_poll_dict(p.id, rconn, &user.namehash).await
+        } else {
+            None
+        },
         // for old version frontend
         timestamp: p.create_time.timestamp(),
         likenum: p.n_attentions,
@@ -145,6 +154,7 @@ pub async fn get_list(
     db: Db,
     rconn: RdsConn,
 ) -> JsonAPI {
+    user.id.ok_or_else(|| YouAreTmp)?;
     let page = p.unwrap_or(1);
     let page_size = 25;
     let start = (page - 1) * page_size;
@@ -205,6 +215,7 @@ pub async fn edit_cw(cwi: Form<CwInput>, user: CurrentUser, db: Db, rconn: RdsCo
 
 #[get("/getmulti?<pids>")]
 pub async fn get_multi(pids: Vec<i32>, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonAPI {
+    user.id.ok_or_else(|| YouAreTmp)?;
     let ps = Post::get_multi(&db, &rconn, &pids).await?;
     let ps_data = ps2outputs(&ps, &user, &db, &rconn).await;
 
