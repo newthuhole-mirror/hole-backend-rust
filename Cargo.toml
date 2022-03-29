@@ -6,6 +6,9 @@ license = "AGPL-3.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+mastlogin = ["url", "reqwest"]
+
 [dependencies]
 rocket = { version = "0.5.0-rc.1", features = ["json"] }
 rocket_sync_db_pools = { version = "0.1.0-cr.1", features = ["diesel_postgres_pool"] }
@@ -20,5 +23,5 @@ sha2 = "0.10.2"
 log = "0.4.16"
 env_logger = "0.9.0"
 
-url = "2.2.2"
-reqwest = { version = "0.11.10", features = ["json"] }
+url = { version="2.2.2",optional = true }
+reqwest = { version = "0.11.10", features = ["json"], optional = true }

@@ -1,4 +1,4 @@
-# hole-backend-rust v1.0.0
+# hole-backend-rust v1.1.0
 
 
 ## 部署
@@ -67,4 +67,4 @@ cargo run --release
 
 + 如果你希望使用自己的登录系统，将 `/_login/` 路径交由另外的后端处理，只需最终将用户名和token写入users表，并跳转到 `/?token=<token>`。
 
-+ 如果你希望也使用闭社提供的授权来维护账号系统，使用 `https://thu.closed.social/api/v1/apps` 接口创建应用，并在.env或环境变量中填入client与secret。此操作不需要闭社账号。详情见[文档](https://docs.joinmastodon.org/client/token/#app)。
++ 如果你希望也使用闭社提供的授权来维护账号系统，使用 `https://thu.closed.social/api/v1/apps` 接口创建应用，并在.env或环境变量中填入client与secret。此操作不需要闭社账号。详情见[文档](https://docs.joinmastodon.org/client/token/#app)。编译运行时，增加`--features mastlogin`: `cargo run  --release --features mastlogin`

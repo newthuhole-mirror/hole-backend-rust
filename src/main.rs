@@ -16,6 +16,7 @@ mod api;
 mod cache;
 mod db_conn;
 mod libs;
+#[cfg(feature = "mastlogin")]
 mod login;
 mod models;
 mod random_hasher;
@@ -49,6 +50,7 @@ async fn main() -> Result<(), rocket::Error> {
             models::Post::annealing(establish_connection(), &rconn).await;
         }
     });
+
     rocket::build()
         .mount(
             "/_api/v1",
@@ -71,7 +73,17 @@ async fn main() -> Result<(), rocket::Error> {
                 api::vote::vote,
             ],
         )
-        .mount("/_login", routes![login::cs_login, login::cs_auth])
+        .mount(
+            "/_login",
+            #[cfg(feature = "mastlogin")]
+            {
+                routes![login::cs_login, login::cs_auth]
+            },
+            #[cfg(not(feature = "mastlogin"))]
+            {
+                []
+            },
+        )
         .register(
             "/_api",
             catchers![api::catch_401_error, api::catch_403_error,],
