@@ -75,14 +75,12 @@ async fn main() -> Result<(), rocket::Error> {
         )
         .mount(
             "/_login",
-            #[cfg(feature = "mastlogin")]
-            {
-                routes![login::cs_login, login::cs_auth]
-            },
-            #[cfg(not(feature = "mastlogin"))]
-            {
-                []
-            },
+            [
+                #[cfg(feature = "mastlogin")]
+                routes![login::cs_login, login::cs_auth],
+                routes![],
+            ]
+            .concat(),
         )
         .register(
             "/_api",
