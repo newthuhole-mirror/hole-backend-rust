@@ -1,2 +1,2 @@
 [default]
-limits = { file = "200MB", files = "200MB" }
+limits = { file = "200MB" }
