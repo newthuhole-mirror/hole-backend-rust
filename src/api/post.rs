@@ -1,13 +1,12 @@
 use crate::api::comment::{c2output, CommentOutput};
 use crate::api::vote::get_poll_dict;
-use crate::api::{CurrentUser, JsonAPI, UGC, PolicyError::*};
+use crate::api::{CurrentUser, JsonAPI, PolicyError::*, UGC};
 use crate::db_conn::Db;
 use crate::libs::diesel_logger::LoggingConnection;
 use crate::models::*;
 use crate::rds_conn::RdsConn;
 use crate::rds_models::*;
 use crate::schema;
-use chrono::{offset::Utc, DateTime};
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use rocket::form::Form;
 use rocket::futures::future;
@@ -38,8 +37,8 @@ pub struct PostOutput {
     is_tmp: bool,
     n_attentions: i32,
     n_comments: i32,
-    create_time: DateTime<Utc>,
-    last_comment_time: DateTime<Utc>,
+    create_time: i64,
+    last_comment_time: i64,
     allow_search: bool,
     is_reported: Option<bool>,
     comments: Option<Vec<CommentOutput>>,
@@ -67,19 +66,16 @@ async fn p2output(p: &Post, user: &CurrentUser, db: &Db, rconn: &RdsConn) -> Pos
     let is_blocked = BlockedUsers::check_blocked(rconn, user.id, &user.namehash, &p.author_hash)
         .await
         .unwrap_or_default();
-    let can_view = !is_blocked && user.id.is_some() || user.namehash.eq(&p.author_hash);
+    let can_view =
+        user.is_admin || (!is_blocked && user.id.is_some() || user.namehash.eq(&p.author_hash));
     PostOutput {
         pid: p.id,
-        text: format!(
-            "{}{}",
-            if p.is_tmp { "[tmp]\n" } else { "" },
-            if can_view { &p.content } else { "" }
-        ),
+        text: (if can_view { &p.content } else { "" }).to_string(),
         cw: (!p.cw.is_empty()).then(|| p.cw.to_string()),
         n_attentions: p.n_attentions,
         n_comments: p.n_comments,
-        create_time: p.create_time,
-        last_comment_time: p.last_comment_time,
+        create_time: p.create_time.timestamp(),
+        last_comment_time: p.last_comment_time.timestamp(),
         allow_search: p.allow_search,
         author_title: (!p.author_title.is_empty()).then(|| p.author_title.to_string()),
         is_tmp: p.is_tmp,

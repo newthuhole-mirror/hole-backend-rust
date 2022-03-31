@@ -25,6 +25,13 @@ macro_rules! code0 {
     );
 }
 
+macro_rules! e2s {
+    ($e:expr) => (json!({
+        "code": -1,
+        "msg": $e.to_string()
+    }));
+}
+
 #[catch(401)]
 pub fn catch_401_error() -> &'static str {
     "未登录或token过期"
@@ -100,21 +107,15 @@ pub enum APIError {
     DbError(diesel::result::Error),
     RdsError(redis::RedisError),
     PcError(PolicyError),
+    IoError(std::io::Error),
 }
 
 impl<'r> Responder<'r, 'static> for APIError {
     fn respond_to(self, req: &'r Request<'_>) -> response::Result<'static> {
         match self {
-            APIError::DbError(e) => json!({
-                "code": -1,
-                "msg": e.to_string()
-            })
-            .respond_to(req),
-            APIError::RdsError(e) => json!({
-                "code": -1,
-                "msg": e.to_string()
-            })
-            .respond_to(req),
+            APIError::DbError(e) => e2s!(e).respond_to(req),
+            APIError::RdsError(e) => e2s!(e).respond_to(req),
+            APIError::IoError(e) => e2s!(e).respond_to(req),
             APIError::PcError(e) => json!({
                 "code": -1,
                 "msg": match e {
@@ -139,6 +140,12 @@ impl From<diesel::result::Error> for APIError {
 impl From<redis::RedisError> for APIError {
     fn from(err: redis::RedisError) -> APIError {
         APIError::RdsError(err)
+    }
+}
+
+impl From<std::io::Error> for APIError {
+    fn from(err: std::io::Error) -> APIError {
+        APIError::IoError(err)
     }
 }
 
@@ -237,4 +244,5 @@ pub mod operation;
 pub mod post;
 pub mod search;
 pub mod systemlog;
+pub mod upload;
 pub mod vote;

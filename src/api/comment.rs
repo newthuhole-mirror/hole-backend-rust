@@ -5,7 +5,6 @@ use crate::models::*;
 use crate::rds_conn::RdsConn;
 use crate::rds_models::*;
 use crate::schema;
-use chrono::{offset::Utc, DateTime};
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use rocket::form::Form;
 use rocket::futures::future;
@@ -30,7 +29,7 @@ pub struct CommentOutput {
     can_del: bool,
     name_id: i32,
     is_tmp: bool,
-    create_time: DateTime<Utc>,
+    create_time: i64,
     is_blocked: bool,
     blocked_count: Option<i32>,
     // for old version frontend
@@ -61,19 +60,16 @@ pub async fn c2output<'r>(
                 BlockedUsers::check_blocked(rconn, user.id, &user.namehash, &c.author_hash)
                     .await
                     .unwrap_or_default();
-            let can_view = !is_blocked && user.id.is_some() || user.namehash.eq(&c.author_hash);
+            let can_view = user.is_admin
+                || (!is_blocked && user.id.is_some() || user.namehash.eq(&c.author_hash));
             Some(CommentOutput {
                 cid: c.id,
-                text: format!(
-                    "{}{}",
-                    if c.is_tmp { "[tmp]\n" } else { "" },
-                    if can_view { &c.content } else { "" }
-                ),
+                text: (if can_view { &c.content } else { "" }).to_string(),
                 author_title: c.author_title.to_string(),
                 can_del: c.check_permission(user, "wd").is_ok(),
                 name_id: name_id,
                 is_tmp: c.is_tmp,
-                create_time: c.create_time,
+                create_time: c.create_time.timestamp(),
                 is_blocked: is_blocked,
                 blocked_count: if user.is_admin {
                     BlockCounter::get_count(rconn, &c.author_hash).await.ok()
