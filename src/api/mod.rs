@@ -25,6 +25,15 @@ macro_rules! code0 {
     );
 }
 
+macro_rules! code1 {
+    ($msg:expr) => (
+        Ok(json!({
+            "code": 1,
+            "msg": $msg,
+        }))
+    );
+}
+
 macro_rules! e2s {
     ($e:expr) => (json!({
         "code": -1,
