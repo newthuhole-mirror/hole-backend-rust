@@ -1,5 +1,3 @@
-#![feature(concat_idents)]
-
 #[macro_use]
 extern crate rocket;
 
