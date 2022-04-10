@@ -3,7 +3,7 @@ use crate::libs::diesel_logger::LoggingConnection;
 use crate::models::*;
 use crate::random_hasher::RandomHasher;
 use crate::rds_conn::RdsConn;
-use crate::rds_models::BannedUsers;
+use crate::rds_models::*;
 use crate::schema;
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use rocket::http::Status;
@@ -52,10 +52,11 @@ pub fn catch_403_error() -> &'static str {
 }
 
 pub struct CurrentUser {
-    id: Option<i32>, // tmp user has no id, only for block
+    pub id: Option<i32>, // tmp user has no id, only for block
     namehash: String,
     is_admin: bool,
     custom_title: String,
+    pub auto_block_rank: u8,
 }
 
 #[rocket::async_trait]
@@ -91,7 +92,12 @@ impl<'r> FromRequest<'r> for CurrentUser {
                 } else {
                     Outcome::Success(CurrentUser {
                         id: id,
-                        custom_title: format!("title todo: {}", &nh),
+                        custom_title: CustomTitle::get(&rconn, &nh)
+                            .await
+                            .ok()
+                            .flatten()
+                            .unwrap_or_default(),
+                        auto_block_rank: AutoBlockRank::get(&rconn, &nh).await.unwrap_or(2),
                         namehash: nh,
                         is_admin: is_admin,
                     })

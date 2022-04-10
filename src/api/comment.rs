@@ -1,4 +1,5 @@
 use crate::api::{APIError, CurrentUser, JsonAPI, PolicyError::*, UGC};
+use crate::cache::BlockDictCache;
 use crate::db_conn::Db;
 use crate::libs::diesel_logger::LoggingConnection;
 use crate::models::*;
@@ -41,6 +42,7 @@ pub async fn c2output<'r>(
     p: &'r Post,
     cs: &Vec<Comment>,
     user: &CurrentUser,
+    cached_block_dict: &HashMap<String, bool>,
     rconn: &RdsConn,
 ) -> Vec<CommentOutput> {
     let mut hash2id = HashMap::<&String, i32>::from([(&p.author_hash, 0)]);
@@ -56,10 +58,7 @@ pub async fn c2output<'r>(
         if c.is_deleted {
             None
         } else {
-            let is_blocked =
-                BlockedUsers::check_blocked(rconn, user.id, &user.namehash, &c.author_hash)
-                    .await
-                    .unwrap_or_default();
+            let is_blocked = cached_block_dict[&c.author_hash];
             let can_view = user.is_admin
                 || (!is_blocked && user.id.is_some() || user.namehash.eq(&c.author_hash));
             Some(CommentOutput {
@@ -72,7 +71,10 @@ pub async fn c2output<'r>(
                 create_time: c.create_time.timestamp(),
                 is_blocked: is_blocked,
                 blocked_count: if user.is_admin {
-                    BlockCounter::get_count(rconn, &c.author_hash).await.ok()
+                    BlockCounter::get_count(rconn, &c.author_hash)
+                        .await
+                        .ok()
+                        .flatten()
                 } else {
                     None
                 },
@@ -94,7 +96,11 @@ pub async fn get_comment(pid: i32, user: CurrentUser, db: Db, rconn: RdsConn) ->
         return Err(APIError::PcError(IsDeleted));
     }
     let cs = p.get_comments(&db, &rconn).await?;
-    let data = c2output(&p, &cs, &user, &rconn).await;
+    let hash_list = cs.iter().map(|c| &c.author_hash).collect();
+    let cached_block_dict = BlockDictCache::init(&user.namehash, p.id, &rconn)
+        .get_or_create(&user, &hash_list)
+        .await?;
+    let data = c2output(&p, &cs, &user, &cached_block_dict, &rconn).await;
 
     Ok(json!({
         "code": 0,

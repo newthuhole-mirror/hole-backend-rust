@@ -1,4 +1,4 @@
-# hole-backend-rust v1.1.0
+# hole-backend-rust v1.2.0
 
 
 ## 部署

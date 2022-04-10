@@ -1,10 +1,13 @@
+use crate::api::CurrentUser;
 use crate::models::{Comment, Post, User};
 use crate::rds_conn::RdsConn;
-use crate::rds_models::init;
+use crate::rds_models::{init, BlockedUsers};
 use rand::Rng;
-use redis::AsyncCommands;
+use redis::{AsyncCommands, RedisError, RedisResult};
 use rocket::serde::json::serde_json;
 // can use rocket::serde::json::to_string in master version
+use rocket::futures::future;
+use std::collections::HashMap;
 
 const INSTANCE_EXPIRE_TIME: usize = 60 * 60;
 
@@ -319,5 +322,53 @@ impl UserCache {
         } else {
             None
         }
+    }
+}
+
+pub struct BlockDictCache {
+    key: String,
+    rconn: RdsConn,
+}
+
+impl BlockDictCache {
+    // namehash, pid
+    init!(&str, i32, "hole_v2:cache:block_dict:{}:{}");
+
+    pub async fn get_or_create(
+        &mut self,
+        user: &CurrentUser,
+        hash_list: &Vec<&String>,
+    ) -> RedisResult<HashMap<String, bool>> {
+        let mut block_dict = self
+            .rconn
+            .hgetall::<&String, HashMap<String, bool>>(&self.key)
+            .await?;
+
+        //dbg!(&self.key, &block_dict);
+
+        let missing: Vec<(String, bool)> =
+            future::try_join_all(hash_list.iter().filter_map(|hash| {
+                (!block_dict.contains_key(&hash.to_string())).then(|| async {
+                    Ok::<(String, bool), RedisError>((
+                        hash.to_string(),
+                        BlockedUsers::check_if_block(&self.rconn, user, hash).await?,
+                    ))
+                })
+            }))
+            .await?;
+
+        if !missing.is_empty() {
+            self.rconn.hset_multiple(&self.key, &missing).await?;
+            self.rconn.expire(&self.key, INSTANCE_EXPIRE_TIME).await?;
+            block_dict.extend(missing.into_iter());
+        }
+
+        //dbg!(&block_dict);
+
+        Ok(block_dict)
+    }
+
+    pub async fn clear(&mut self) -> RedisResult<()> {
+        self.rconn.del(&self.key).await
     }
 }

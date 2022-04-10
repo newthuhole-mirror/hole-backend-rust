@@ -1,3 +1,4 @@
+use crate::api::CurrentUser;
 use crate::rds_conn::RdsConn;
 use chrono::{offset::Local, DateTime};
 use redis::{AsyncCommands, RedisResult};
@@ -40,7 +41,7 @@ macro_rules! has {
 
 macro_rules! add {
     ($vtype:ty) => {
-        pub async fn add(&mut self, v: $vtype) -> RedisResult<()> {
+        pub async fn add(&mut self, v: $vtype) -> RedisResult<usize> {
             self.rconn.sadd(&self.key, v).await
         }
     };
@@ -49,11 +50,10 @@ macro_rules! add {
 const KEY_SYSTEMLOG: &str = "hole_v2:systemlog_list";
 const KEY_BANNED_USERS: &str = "hole_v2:banned_user_hash_list";
 const KEY_BLOCKED_COUNTER: &str = "hole_v2:blocked_counter";
-const KEY_DANGEROUS_USERS: &str = "hole_thu:dangerous_users"; //兼容一下旧版
 const KEY_CUSTOM_TITLE: &str = "hole_v2:title";
+const KEY_AUTO_BLOCK_RANK: &str = "hole_v2:auto_block_rank"; // rank * 5: 自动过滤的拉黑数阈值
 
 const SYSTEMLOG_MAX_LEN: isize = 1000;
-pub const BLOCK_THRESHOLD: i32 = 10;
 
 pub struct Attention {
     key: String,
@@ -159,44 +159,28 @@ impl BlockedUsers {
 
     has!(&str);
 
-    pub async fn check_blocked(
+    pub async fn check_if_block(
         rconn: &RdsConn,
-        viewer_id: Option<i32>,
-        viewer_hash: &str,
-        author_hash: &str,
+        user: &CurrentUser,
+        hash: &str,
     ) -> RedisResult<bool> {
-        Ok(match viewer_id {
-            Some(id) => Self::init(id, rconn).has(author_hash).await?,
+        Ok(match user.id {
+            Some(id) => BlockedUsers::init(id, rconn).has(hash).await?,
             None => false,
-        } || (DangerousUser::has(rconn, author_hash).await?
-            && !DangerousUser::has(rconn, viewer_hash).await?))
+        } || BlockCounter::get_count(rconn, hash).await?.unwrap_or(0)
+            >= i32::from(user.auto_block_rank) * 5)
     }
 }
 
 pub struct BlockCounter;
 
 impl BlockCounter {
-    pub async fn count_incr(rconn: &RdsConn, namehash: &str) -> RedisResult<i32> {
+    pub async fn count_incr(rconn: &RdsConn, namehash: &str) -> RedisResult<usize> {
         rconn.clone().hincr(KEY_BLOCKED_COUNTER, namehash, 1).await
     }
 
-    pub async fn get_count(rconn: &RdsConn, namehash: &str) -> RedisResult<i32> {
+    pub async fn get_count(rconn: &RdsConn, namehash: &str) -> RedisResult<Option<i32>> {
         rconn.clone().hget(KEY_BLOCKED_COUNTER, namehash).await
-    }
-}
-
-pub struct DangerousUser;
-
-impl DangerousUser {
-    pub async fn add(rconn: &RdsConn, namehash: &str) -> RedisResult<()> {
-        rconn
-            .clone()
-            .sadd::<&str, &str, ()>(KEY_DANGEROUS_USERS, namehash)
-            .await
-    }
-
-    pub async fn has(rconn: &RdsConn, namehash: &str) -> RedisResult<bool> {
-        rconn.clone().sismember(KEY_DANGEROUS_USERS, namehash).await
     }
 }
 
@@ -221,6 +205,26 @@ impl CustomTitle {
 
     pub async fn clear(rconn: &RdsConn) -> RedisResult<()> {
         rconn.clone().del(KEY_CUSTOM_TITLE).await
+    }
+}
+
+pub struct AutoBlockRank;
+
+impl AutoBlockRank {
+    pub async fn set(rconn: &RdsConn, namehash: &str, rank: u8) -> RedisResult<usize> {
+        rconn
+            .clone()
+            .hset(KEY_AUTO_BLOCK_RANK, namehash, rank)
+            .await
+    }
+
+    pub async fn get(rconn: &RdsConn, namehash: &str) -> RedisResult<u8> {
+        let rank: Option<u8> = rconn.clone().hget(KEY_AUTO_BLOCK_RANK, namehash).await?;
+        Ok(rank.unwrap_or(2))
+    }
+
+    pub async fn clear(rconn: &RdsConn) -> RedisResult<()> {
+        rconn.clone().del(KEY_AUTO_BLOCK_RANK).await
     }
 }
 
@@ -257,6 +261,12 @@ impl PollVote {
     pub async fn count(&mut self) -> RedisResult<usize> {
         self.rconn.scard(&self.key).await
     }
+}
+
+pub async fn clear_outdate_redis_data(rconn: &RdsConn) {
+    BannedUsers::clear(&rconn).await.unwrap();
+    CustomTitle::clear(&rconn).await.unwrap();
+    AutoBlockRank::clear(&rconn).await.unwrap();
 }
 
 pub(crate) use init;

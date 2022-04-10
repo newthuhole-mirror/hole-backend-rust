@@ -26,6 +26,7 @@ use db_conn::{establish_connection, Conn, Db};
 use diesel::Connection;
 use random_hasher::RandomHasher;
 use rds_conn::{init_rds_client, RdsConn};
+use rds_models::clear_outdate_redis_data;
 use std::env;
 use tokio::time::{sleep, Duration};
 
@@ -68,6 +69,7 @@ async fn main() -> Result<(), rocket::Error> {
                 api::operation::report,
                 api::operation::set_title,
                 api::operation::block,
+                api::operation::set_auto_block,
                 api::vote::vote,
                 api::upload::ipfs_upload,
             ],
@@ -104,9 +106,4 @@ fn init_database() {
     let database_url = env::var("DATABASE_URL").unwrap();
     let conn = Conn::establish(&database_url).unwrap();
     embedded_migrations::run(&conn).unwrap();
-}
-
-async fn clear_outdate_redis_data(rconn: &RdsConn) {
-    rds_models::BannedUsers::clear(&rconn).await.unwrap();
-    rds_models::CustomTitle::clear(&rconn).await.unwrap();
 }

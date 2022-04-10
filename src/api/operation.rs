@@ -1,4 +1,5 @@
-use crate::api::{CurrentUser, JsonAPI, PolicyError::*, UGC};
+use crate::api::{APIError, CurrentUser, JsonAPI, PolicyError::*, UGC};
+use crate::cache::*;
 use crate::db_conn::Db;
 use crate::libs::diesel_logger::LoggingConnection;
 use crate::models::*;
@@ -72,7 +73,6 @@ pub async fn delete(di: Form<DeleteInput>, user: CurrentUser, db: Db, rconn: Rds
             .create(&rconn)
             .await?;
             BannedUsers::add(&rconn, &author_hash).await?;
-            DangerousUser::add(&rconn, &author_hash).await?;
         }
     }
 
@@ -128,28 +128,39 @@ pub async fn block(bi: Form<BlockInput>, user: CurrentUser, db: Db, rconn: RdsCo
 
     let mut blk = BlockedUsers::init(user.id.ok_or_else(|| NotAllowed)?, &rconn);
 
+    let pid;
     let nh_to_block = match bi.content_type.as_str() {
-        "post" => Post::get(&db, &rconn, bi.id).await?.author_hash,
-        "comment" => Comment::get(&db, bi.id).await?.author_hash,
-        _ => Err(NotAllowed)?,
+        "post" => {
+            let p = Post::get(&db, &rconn, bi.id).await?;
+            pid = p.id;
+            p.author_hash
+        }
+        "comment" => {
+            let c = Comment::get(&db, bi.id).await?;
+            pid = c.post_id;
+            c.author_hash
+        }
+        _ => return Err(APIError::PcError(NotAllowed)),
     };
 
     if nh_to_block.eq(&user.namehash) {
         Err(NotAllowed)?;
     }
 
-    blk.add(&nh_to_block).await?;
-    let curr = BlockCounter::count_incr(&rconn, &nh_to_block).await?;
+    let curr = if blk.add(&nh_to_block).await? > 0 {
+        BlockCounter::count_incr(&rconn, &nh_to_block).await?
+    } else {
+        114514
+    };
 
-    if curr >= BLOCK_THRESHOLD || user.is_admin {
-        DangerousUser::add(&rconn, &nh_to_block).await?;
-    }
+    BlockDictCache::init(&user.namehash, pid, &rconn)
+        .clear()
+        .await?;
 
     Ok(json!({
         "code": 0,
         "data": {
             "curr": curr,
-            "threshold": BLOCK_THRESHOLD,
         },
     }))
 }
@@ -167,4 +178,19 @@ pub async fn set_title(ti: Form<TitleInput>, user: CurrentUser, rconn: RdsConn) 
     } else {
         Err(TitleUsed)?
     }
+}
+
+#[derive(FromForm)]
+pub struct AutoBlockInput {
+    rank: u8,
+}
+
+#[post("/auto_block", data = "<ai>")]
+pub async fn set_auto_block(
+    ai: Form<AutoBlockInput>,
+    user: CurrentUser,
+    rconn: RdsConn,
+) -> JsonAPI {
+    AutoBlockRank::set(&rconn, &user.namehash, ai.rank).await?;
+    code0!()
 }

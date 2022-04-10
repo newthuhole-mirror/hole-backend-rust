@@ -36,7 +36,7 @@ pub async fn search(
         )
         .await?
     };
-    let ps_data = ps2outputs(&ps, &user, &db, &rconn).await;
+    let ps_data = ps2outputs(&ps, &user, &db, &rconn).await?;
     Ok(json!({
         "data": ps_data,
         "count": ps_data.len(),

@@ -1,6 +1,7 @@
 use crate::api::comment::{c2output, CommentOutput};
 use crate::api::vote::get_poll_dict;
-use crate::api::{CurrentUser, JsonAPI, PolicyError::*, UGC};
+use crate::api::{CurrentUser, JsonAPI, PolicyError::*, API, UGC};
+use crate::cache::*;
 use crate::db_conn::Db;
 use crate::libs::diesel_logger::LoggingConnection;
 use crate::models::*;
@@ -9,7 +10,7 @@ use crate::rds_models::*;
 use crate::schema;
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use rocket::form::Form;
-use rocket::futures::future;
+use rocket::futures::future::{self, OptionFuture};
 use rocket::serde::{
     json::{json, Value},
     Serialize,
@@ -62,47 +63,48 @@ pub struct CwInput {
     cw: String,
 }
 
-async fn p2output(p: &Post, user: &CurrentUser, db: &Db, rconn: &RdsConn) -> PostOutput {
-    let is_blocked = BlockedUsers::check_blocked(rconn, user.id, &user.namehash, &p.author_hash)
-        .await
-        .unwrap_or_default();
+async fn p2output(p: &Post, user: &CurrentUser, db: &Db, rconn: &RdsConn) -> API<PostOutput> {
+    let comments: Option<Vec<Comment>> = if p.n_comments < 5 {
+        Some(p.get_comments(db, rconn).await?)
+    } else {
+        None
+    };
+    let hash_list = comments
+        .iter()
+        .flatten()
+        .map(|c| &c.author_hash)
+        .chain(std::iter::once(&p.author_hash))
+        .collect();
+    //dbg!(&hash_list);
+    let cached_block_dict = BlockDictCache::init(&user.namehash, p.id, rconn)
+        .get_or_create(&user, &hash_list)
+        .await?;
+    let is_blocked = cached_block_dict[&p.author_hash];
     let can_view =
         user.is_admin || (!is_blocked && user.id.is_some() || user.namehash.eq(&p.author_hash));
-    PostOutput {
+    Ok(PostOutput {
         pid: p.id,
-        text: (if can_view { &p.content } else { "" }).to_string(),
-        cw: (!p.cw.is_empty()).then(|| p.cw.to_string()),
+        text: can_view.then(|| p.content.clone()).unwrap_or_default(),
+        cw: (!p.cw.is_empty()).then(|| p.cw.clone()),
         n_attentions: p.n_attentions,
         n_comments: p.n_comments,
         create_time: p.create_time.timestamp(),
         last_comment_time: p.last_comment_time.timestamp(),
         allow_search: p.allow_search,
-        author_title: (!p.author_title.is_empty()).then(|| p.author_title.to_string()),
+        author_title: (!p.author_title.is_empty()).then(|| p.author_title.clone()),
         is_tmp: p.is_tmp,
         is_reported: user.is_admin.then(|| p.is_reported),
-        comments: if p.n_comments > 50 {
-            None
-        } else {
-            // 单个洞还有查询评论的接口，这里挂了不用报错
-            Some(
-                c2output(
-                    p,
-                    &p.get_comments(db, rconn).await.unwrap_or(vec![]),
-                    user,
-                    rconn,
-                )
-                .await,
-            )
-        },
+        comments: OptionFuture::from(
+            comments
+                .map(|cs| async move { c2output(p, &cs, user, &cached_block_dict, rconn).await }),
+        )
+        .await,
         can_del: p.check_permission(user, "wd").is_ok(),
-        attention: Attention::init(&user.namehash, &rconn)
-            .has(p.id)
-            .await
-            .unwrap_or_default(),
+        attention: Attention::init(&user.namehash, &rconn).has(p.id).await?,
         hot_score: user.is_admin.then(|| p.hot_score),
         is_blocked: is_blocked,
         blocked_count: if user.is_admin {
-            BlockCounter::get_count(rconn, &p.author_hash).await.ok()
+            BlockCounter::get_count(rconn, &p.author_hash).await?
         } else {
             None
         },
@@ -116,7 +118,7 @@ async fn p2output(p: &Post, user: &CurrentUser, db: &Db, rconn: &RdsConn) -> Pos
         likenum: p.n_attentions,
         reply: p.n_comments,
         blocked: is_blocked,
-    }
+    })
 }
 
 pub async fn ps2outputs(
@@ -124,10 +126,10 @@ pub async fn ps2outputs(
     user: &CurrentUser,
     db: &Db,
     rconn: &RdsConn,
-) -> Vec<PostOutput> {
-    future::join_all(
+) -> API<Vec<PostOutput>> {
+    future::try_join_all(
         ps.iter()
-            .map(|p| async { p2output(p, &user, &db, &rconn).await }),
+            .map(|p| async { Ok(p2output(p, &user, &db, &rconn).await?) }),
     )
     .await
 }
@@ -137,7 +139,7 @@ pub async fn get_one(pid: i32, user: CurrentUser, db: Db, rconn: RdsConn) -> Jso
     let p = Post::get(&db, &rconn, pid).await?;
     p.check_permission(&user, "ro")?;
     Ok(json!({
-        "data": p2output(&p, &user,&db, &rconn).await,
+        "data": p2output(&p, &user,&db, &rconn).await?,
         "code": 0,
     }))
 }
@@ -155,11 +157,12 @@ pub async fn get_list(
     let page_size = 25;
     let start = (page - 1) * page_size;
     let ps = Post::gets_by_page(&db, &rconn, order_mode, start.into(), page_size.into()).await?;
-    let ps_data = ps2outputs(&ps, &user, &db, &rconn).await;
+    let ps_data = ps2outputs(&ps, &user, &db, &rconn).await?;
     Ok(json!({
         "data": ps_data,
         "count": ps_data.len(),
-        "custom_title": CustomTitle::get(&rconn, &user.namehash).await?,
+        "custom_title": user.custom_title,
+        "auto_block_rank": user.auto_block_rank,
         "code": 0
     }))
 }
@@ -177,12 +180,7 @@ pub async fn publish_post(
             content: poi.text.to_string(),
             cw: poi.cw.to_string(),
             author_hash: user.namehash.to_string(),
-            author_title: (if poi.use_title.is_some() {
-                CustomTitle::get(&rconn, &user.namehash).await?
-            } else {
-                None
-            })
-            .unwrap_or_default(),
+            author_title: poi.use_title.map(|_| user.custom_title).unwrap_or_default(),
             is_tmp: user.id.is_none(),
             n_attentions: 1,
             allow_search: poi.allow_search.is_some(),
@@ -213,7 +211,7 @@ pub async fn edit_cw(cwi: Form<CwInput>, user: CurrentUser, db: Db, rconn: RdsCo
 pub async fn get_multi(pids: Vec<i32>, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonAPI {
     user.id.ok_or_else(|| YouAreTmp)?;
     let ps = Post::get_multi(&db, &rconn, &pids).await?;
-    let ps_data = ps2outputs(&ps, &user, &db, &rconn).await;
+    let ps_data = ps2outputs(&ps, &user, &db, &rconn).await?;
 
     Ok(json!({
         "code": 0,
