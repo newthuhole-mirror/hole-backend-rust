@@ -280,25 +280,31 @@ impl Post {
                 query = match search_mode {
                     0 => {
                         pat = format!("%#{}%", &search_text2);
-                        query
-                            .filter(posts::cw.eq(&search_text))
-                            .or_filter(posts::cw.eq(format!("#{}", &search_text)))
-                            .or_filter(posts::content.like(&pat))
-                            .or_filter(
-                                comments::content
+                        query.filter(
+                            posts::cw
+                                .eq(&search_text)
+                                .or(posts::cw.eq(format!("#{}", &search_text)))
+                                .or(posts::content.like(&pat))
+                                .or(comments::content
                                     .like(&pat)
-                                    .and(comments::is_deleted.eq(false)),
-                            )
+                                    .and(comments::is_deleted.eq(false))),
+                        )
                     }
                     1 => {
                         pat = format!("%{}%", search_text2.replace(" ", "%"));
                         query
-                            .filter(posts::content.like(&pat).or(comments::content.like(&pat)))
+                            .filter(
+                                posts::content.like(&pat).or(comments::content
+                                    .like(&pat)
+                                    .and(comments::is_deleted.eq(false))),
+                            )
                             .filter(posts::allow_search.eq(true))
                     }
-                    2 => query
-                        .filter(posts::author_title.eq(&search_text))
-                        .or_filter(comments::author_title.eq(&search_text)),
+                    2 => query.filter(
+                        posts::author_title
+                            .eq(&search_text)
+                            .or(comments::author_title.eq(&search_text)),
+                    ),
                     _ => panic!("Wrong search mode!"),
                 };
 
