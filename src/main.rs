@@ -50,6 +50,14 @@ async fn main() -> Result<(), rocket::Error> {
         }
     });
 
+    let rconn = RdsConn(rmc.clone());
+    tokio::spawn(async move {
+        loop {
+            cache::PostListCommentCache::init(3, &rconn).clear().await;
+            sleep(Duration::from_secs(5 * 60)).await;
+        }
+    });
+
     rocket::build()
         .mount(
             "/_api/v1",
