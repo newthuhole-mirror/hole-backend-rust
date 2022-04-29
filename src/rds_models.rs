@@ -75,7 +75,25 @@ impl Attention {
         self.rconn.smembers(&self.key).await
     }
 
-    // TODO: clear all
+    pub async fn clear_all(rconn: &RdsConn) {
+        let mut rconn = rconn.clone();
+        let mut keys = rconn
+            .scan_match::<&str, String>("hole_v2:attention:*")
+            .await
+            .unwrap();
+
+        let mut ks_for_del = Vec::new();
+        while let Some(key) = keys.next_item().await {
+            ks_for_del.push(key);
+        }
+        if ks_for_del.is_empty() {
+            return;
+        }
+        rconn
+            .del(ks_for_del)
+            .await
+            .unwrap_or_else(|e| warn!("clear all post cache fail, {}", e));
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -267,6 +285,7 @@ pub async fn clear_outdate_redis_data(rconn: &RdsConn) {
     BannedUsers::clear(&rconn).await.unwrap();
     CustomTitle::clear(&rconn).await.unwrap();
     AutoBlockRank::clear(&rconn).await.unwrap();
+    Attention::clear_all(&rconn).await;
 }
 
 pub(crate) use init;
