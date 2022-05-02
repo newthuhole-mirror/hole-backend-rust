@@ -81,6 +81,7 @@ async fn main() -> Result<(), rocket::Error> {
                 api::operation::set_auto_block,
                 api::vote::vote,
                 api::upload::ipfs_upload,
+                cors::options_handler,
             ],
         )
         .mount(
