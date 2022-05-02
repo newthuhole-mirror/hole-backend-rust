@@ -12,6 +12,7 @@ extern crate log;
 
 mod api;
 mod cache;
+mod cors;
 mod db_conn;
 mod libs;
 #[cfg(feature = "mastlogin")]
@@ -98,6 +99,13 @@ async fn main() -> Result<(), rocket::Error> {
         .manage(RandomHasher::get_random_one())
         .manage(rmc)
         .attach(Db::fairing())
+        .attach(cors::CORS {
+            whitelist: env::var("FRONTEND_WHITELIST")
+                .unwrap_or_default()
+                .split(',')
+                .map(|s| s.to_string())
+                .collect::<Vec<String>>(),
+        })
         .launch()
         .await
 }
