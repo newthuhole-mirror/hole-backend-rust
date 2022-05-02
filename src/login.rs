@@ -119,5 +119,19 @@ pub async fn cs_auth(code: String, redirect_url: String, jump_to_url: String, db
         .await
         .unwrap();
 
-    Redirect::to(format!("{}?token={}", &jump_to_url, &tk))
+    Redirect::to(format!(
+        "{}?token={}",
+        {
+            if env::var("FRONTEND_WHITELIST")
+                .unwrap_or_default()
+                .split(',')
+                .any(|url| jump_to_url.starts_with(url))
+            {
+                &jump_to_url
+            } else {
+                "/"
+            }
+        },
+        &tk
+    ))
 }
