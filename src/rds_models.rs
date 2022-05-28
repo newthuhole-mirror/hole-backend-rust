@@ -104,6 +104,7 @@ pub enum LogType {
     Ban,
 }
 
+/*
 impl LogType {
     pub fn contains_ugc(&self) -> bool {
         match self {
@@ -112,6 +113,7 @@ impl LogType {
         }
     }
 }
+*/
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(crate = "rocket::serde")]
@@ -238,7 +240,7 @@ impl AutoBlockRank {
 
     pub async fn get(rconn: &RdsConn, namehash: &str) -> RedisResult<u8> {
         let rank: Option<u8> = rconn.clone().hget(KEY_AUTO_BLOCK_RANK, namehash).await?;
-        Ok(rank.unwrap_or(2))
+        Ok(rank.unwrap_or(4))
     }
 
     pub async fn clear(rconn: &RdsConn) -> RedisResult<()> {

@@ -89,28 +89,48 @@ pub struct ReportInput {
 #[post("/report", data = "<ri>")]
 pub async fn report(ri: Form<ReportInput>, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonAPI {
     // 临时用户不允许举报
-    user.id.ok_or_else(|| NotAllowed)?;
+    user.id.ok_or(NotAllowed)?;
+
+    // 被拉黑30次不允许举报
+    (BlockCounter::get_count(&rconn, &user.namehash)
+        .await?
+        .unwrap_or(0)
+        < 30)
+        .then(|| ())
+        .ok_or(NotAllowed)?;
+
+    (!ri.reason.is_empty()).then(|| ()).ok_or(NoReason)?;
 
     let mut p = Post::get(&db, &rconn, ri.pid).await?;
     update!(p, posts, &db, { is_reported, to true });
     p.refresh_cache(&rconn, false).await;
+
     Systemlog {
-        user_hash: user.namehash,
+        user_hash: user.namehash.to_string(),
         action_type: LogType::Report,
-        target: format!(
-            "#{} {}",
-            ri.pid,
-            if ri.reason.starts_with("评论区") {
-                "评论区"
-            } else {
-                ""
-            }
-        ),
+        target: format!("#{}", ri.pid),
         detail: ri.reason.clone(),
         time: Local::now(),
     }
     .create(&rconn)
     .await?;
+
+    // 自动发布一条洞
+    let p = Post::create(
+        &db,
+        NewPost {
+            content: format!("[系统自动代发]\n我举报了 #{}\n理由: {}", &p.id, &ri.reason),
+            cw: "举报".to_string(),
+            author_hash: user.namehash.to_string(),
+            author_title: String::default(),
+            is_tmp: false,
+            n_attentions: 1,
+            allow_search: true,
+        },
+    )
+    .await?;
+    Attention::init(&user.namehash, &rconn).add(p.id).await?;
+    p.refresh_cache(&rconn, true).await;
 
     code0!()
 }

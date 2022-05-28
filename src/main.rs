@@ -46,7 +46,7 @@ async fn main() -> Result<(), rocket::Error> {
     clear_outdate_redis_data(&rconn.clone()).await;
     tokio::spawn(async move {
         loop {
-            sleep(Duration::from_secs(4 * 60 * 60)).await;
+            sleep(Duration::from_secs(3 * 60 * 60)).await;
             models::Post::annealing(establish_connection(), &rconn).await;
         }
     });

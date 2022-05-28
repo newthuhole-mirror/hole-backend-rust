@@ -115,6 +115,7 @@ pub enum PolicyError {
     NotAllowed,
     TitleUsed,
     YouAreTmp,
+    NoReason,
 }
 
 #[derive(Debug)]
@@ -138,7 +139,8 @@ impl<'r> Responder<'r, 'static> for APIError {
                     PolicyError::IsDeleted => "内容被删除",
                     PolicyError::NotAllowed => "不允许的操作",
                     PolicyError::TitleUsed => "头衔已被使用",
-                    PolicyError::YouAreTmp => "临时用户只可发布内容和进入单个洞"
+                    PolicyError::YouAreTmp => "临时用户只可发布内容和进入单个洞",
+                    PolicyError::NoReason => "未填写理由",
                 }
             })
             .respond_to(req),
@@ -219,7 +221,7 @@ impl UGC for Post {
         self.is_deleted
     }
     fn extra_delete_condition(&self) -> bool {
-        self.n_comments == 0
+        self.n_comments == 0 && !self.content.starts_with("[系统自动代发]\n")
     }
     async fn do_set_deleted(&mut self, db: &Db) -> API<()> {
         update!(*self, posts, db, { is_deleted, to true });

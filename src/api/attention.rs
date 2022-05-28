@@ -25,7 +25,7 @@ pub async fn attention_post(
     rconn: RdsConn,
 ) -> JsonAPI {
     // 临时用户不允许手动关注
-    user.id.ok_or_else(|| YouAreTmp)?;
+    user.id.ok_or(YouAreTmp)?;
 
     let mut p = Post::get(&db, &rconn, ai.pid).await?;
     p.check_permission(&user, "r")?;
@@ -35,7 +35,7 @@ pub async fn attention_post(
     if att.has(ai.pid).await? != switch_to {
         if switch_to {
             att.add(ai.pid).await?;
-            delta = 1;
+            delta = (p.n_attentions < 3 * p.n_comments) as i32;
         } else {
             att.remove(ai.pid).await?;
             delta = -1;

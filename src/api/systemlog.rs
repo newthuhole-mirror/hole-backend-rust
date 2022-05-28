@@ -19,7 +19,7 @@ pub async fn get_systemlog(user: CurrentUser, rh: &State<RandomHasher>, rconn: R
                 "type": log.action_type,
                 "user": look!(log.user_hash),
                 "timestamp": log.time.timestamp(),
-                "detail": format!("{}\n{}", &log.target, if user.is_admin || !log.action_type.contains_ugc()  { &log.detail } else { "" })
+                "detail": format!("{}\n{}", &log.target, &log.detail),
             })
         ).collect::<Vec<Value>>(),
     }))

@@ -146,7 +146,7 @@ pub async fn add_comment(
         at_delta = 1;
         att.add(p.id).await?;
     } else {
-        hs_delta = 1;
+        hs_delta = (p.n_comments < 3 * p.n_attentions) as i32;
         at_delta = 0;
     }
 
