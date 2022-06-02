@@ -35,17 +35,22 @@ pub async fn attention_post(
     if att.has(ai.pid).await? != switch_to {
         if switch_to {
             att.add(ai.pid).await?;
-            delta = (p.n_attentions < 3 * p.n_comments) as i32;
+            delta = 1;
         } else {
             att.remove(ai.pid).await?;
             delta = -1;
         }
+        let hot_delta = if p.n_attentions <= 3 * p.n_comments {
+            delta * 2
+        } else {
+            0
+        };
         update!(
             p,
             posts,
             &db,
             { n_attentions, add delta },
-            { hot_score, add delta * 2 }
+            { hot_score, add hot_delta }
         );
         if switch_to && user.is_admin {
             update!(p, posts, &db, { is_reported, to false });
