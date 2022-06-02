@@ -91,11 +91,11 @@ pub async fn report(ri: Form<ReportInput>, user: CurrentUser, db: Db, rconn: Rds
     // 临时用户不允许举报
     user.id.ok_or(NotAllowed)?;
 
-    // 被拉黑30次不允许举报
+    // 被拉黑10次不允许举报
     (BlockCounter::get_count(&rconn, &user.namehash)
         .await?
         .unwrap_or(0)
-        < 30)
+        < 10)
         .then(|| ())
         .ok_or(NotAllowed)?;
 
