@@ -41,7 +41,18 @@ pub async fn delete(di: Form<DeleteInput>, user: CurrentUser, db: Db, rconn: Rds
         }
         "pid" => {
             let mut p = Post::get(&db, &rconn, di.id).await?;
-            p.soft_delete(&user, &db).await?;
+
+            // 有评论：清空主楼而非删除
+            if p.author_hash == user.namehash && p.n_comments > 0 {
+                update! {
+                    p,
+                    posts,
+                    &db,
+                    { content, to "[洞主已删除]" }
+                }
+            } else {
+                p.soft_delete(&user, &db).await?;
+            }
 
             // 如果是删除，需要也从0号缓存队列中去掉
             p.refresh_cache(&rconn, true).await;
