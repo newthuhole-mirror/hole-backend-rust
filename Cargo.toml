@@ -11,8 +11,11 @@ default = ["mastlogin"]
 mastlogin = ["url", "reqwest"]
 
 [dependencies]
-rocket = { version = "0.5.0-rc.1", features = ["json"] }
-rocket_sync_db_pools = { version = "0.1.0-cr.1", features = ["diesel_postgres_pool"] }
+rocket = { version = "=0.5.0-rc.1", features = ["json"] }
+rocket_codegen = "=0.5.0-rc.1"
+rocket_http = "=0.5.0-rc.1"
+rocket_sync_db_pools_codegen = "=0.1.0-rc.1"
+rocket_sync_db_pools = { version = "=0.1.0-rc.1", features = ["diesel_postgres_pool"] }
 diesel = { version = "1.4.8", features = ["postgres", "chrono"] }
 diesel_migrations = "1.4.0"
 tokio = "1.17.0"
