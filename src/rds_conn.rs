@@ -1,7 +1,7 @@
 use redis::aio::MultiplexedConnection;
 use rocket::request::{FromRequest, Outcome, Request};
-use std::ops::{Deref, DerefMut};
 use std::env;
+use std::ops::{Deref, DerefMut};
 
 pub struct RdsConn(pub MultiplexedConnection);
 
@@ -33,7 +33,6 @@ impl DerefMut for RdsConn {
         &mut self.0
     }
 }
-
 
 pub async fn init_rds_client() -> MultiplexedConnection {
     let redis_url = env::var("REDIS_URL").expect("REDIS_URL must be set");

@@ -171,7 +171,7 @@ impl Post {
         let missing_ps = Self::_get_multi(db, missing_ids).await?;
         // dbg!(&missing_ps);
 
-        cacher.sets(&missing_ps.iter().collect()).await;
+        cacher.sets(&missing_ps.iter().collect::<Vec<_>>()).await;
 
         for p in missing_ps.into_iter() {
             if let Some(op) = id2po.get_mut(&p.id) {

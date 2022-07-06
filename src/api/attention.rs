@@ -1,5 +1,5 @@
 use crate::api::post::ps2outputs;
-use crate::api::{CurrentUser, JsonAPI, PolicyError::*, UGC};
+use crate::api::{CurrentUser, JsonApi, PolicyError::*, Ugc};
 use crate::db_conn::Db;
 use crate::libs::diesel_logger::LoggingConnection;
 use crate::models::*;
@@ -23,7 +23,7 @@ pub async fn attention_post(
     user: CurrentUser,
     db: Db,
     rconn: RdsConn,
-) -> JsonAPI {
+) -> JsonApi {
     // 临时用户不允许手动关注
     user.id.ok_or(YouAreTmp)?;
 
@@ -68,7 +68,7 @@ pub async fn attention_post(
 }
 
 #[get("/getattention")]
-pub async fn get_attention(user: CurrentUser, db: Db, rconn: RdsConn) -> JsonAPI {
+pub async fn get_attention(user: CurrentUser, db: Db, rconn: RdsConn) -> JsonApi {
     let mut ids = Attention::init(&user.namehash, &rconn).all().await?;
     ids.sort_by_key(|x| -x);
     let ps = Post::get_multi(&db, &rconn, &ids).await?;

@@ -1,12 +1,12 @@
-use crate::api::{CurrentUser, JsonAPI};
+use crate::api::{CurrentUser, JsonApi};
 use crate::random_hasher::RandomHasher;
 use crate::rds_conn::RdsConn;
-use crate::rds_models::{Systemlog};
+use crate::rds_models::Systemlog;
 use rocket::serde::json::{json, Value};
 use rocket::State;
 
 #[get("/systemlog")]
-pub async fn get_systemlog(user: CurrentUser, rh: &State<RandomHasher>, rconn: RdsConn) -> JsonAPI {
+pub async fn get_systemlog(user: CurrentUser, rh: &State<RandomHasher>, rconn: RdsConn) -> JsonApi {
     let logs = Systemlog::get_list(&rconn, 50).await?;
 
     Ok(json!({

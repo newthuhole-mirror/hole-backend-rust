@@ -1,4 +1,4 @@
-use crate::api::{CurrentUser, JsonAPI, PolicyError::*};
+use crate::api::{CurrentUser, JsonApi, PolicyError::*};
 use crate::rds_conn::RdsConn;
 use crate::rds_models::*;
 use rocket::form::Form;
@@ -22,7 +22,7 @@ pub async fn get_poll_dict(pid: i32, rconn: &RdsConn, namehash: &str) -> Option<
         }))
         .await
         .into_iter()
-        .filter_map(|x| x)
+        .flatten()
         .collect::<Vec<&String>>()
         .pop();
         Some(json!({
@@ -46,8 +46,8 @@ pub struct VoteInput {
 }
 
 #[post("/vote", data = "<vi>")]
-pub async fn vote(vi: Form<VoteInput>, user: CurrentUser, rconn: RdsConn) -> JsonAPI {
-    user.id.ok_or_else(|| NotAllowed)?;
+pub async fn vote(vi: Form<VoteInput>, user: CurrentUser, rconn: RdsConn) -> JsonApi {
+    user.id.ok_or(NotAllowed)?;
 
     let pid = vi.pid;
     let opts = PollOption::init(pid, &rconn).get_list().await?;
@@ -61,10 +61,7 @@ pub async fn vote(vi: Form<VoteInput>, user: CurrentUser, rconn: RdsConn) -> Jso
         }
     }
 
-    let idx: usize = opts
-        .iter()
-        .position(|x| x.eq(&vi.vote))
-        .ok_or_else(|| NotAllowed)?;
+    let idx: usize = opts.iter().position(|x| x.eq(&vi.vote)).ok_or(NotAllowed)?;
 
     PollVote::init(pid, idx, &rconn).add(&user.namehash).await?;
 

@@ -1,4 +1,4 @@
-use crate::api::{APIError, CurrentUser, JsonAPI, PolicyError::*, UGC};
+use crate::api::{ApiError, CurrentUser, JsonApi, PolicyError::*, Ugc};
 use crate::cache::BlockDictCache;
 use crate::db_conn::Db;
 use crate::libs::diesel_logger::LoggingConnection;
@@ -40,7 +40,7 @@ pub struct CommentOutput {
 
 pub async fn c2output<'r>(
     p: &'r Post,
-    cs: &Vec<Comment>,
+    cs: &[Comment],
     user: &CurrentUser,
     cached_block_dict: &HashMap<String, bool>,
     rconn: &RdsConn,
@@ -66,10 +66,10 @@ pub async fn c2output<'r>(
                 text: (if can_view { &c.content } else { "" }).to_string(),
                 author_title: c.author_title.to_string(),
                 can_del: c.check_permission(user, "wd").is_ok(),
-                name_id: name_id,
+                name_id,
                 is_tmp: c.is_tmp,
                 create_time: c.create_time.timestamp(),
-                is_blocked: is_blocked,
+                is_blocked,
                 blocked_count: if user.is_admin {
                     BlockCounter::get_count(rconn, &c.author_hash)
                         .await
@@ -85,18 +85,18 @@ pub async fn c2output<'r>(
     }))
     .await
     .into_iter()
-    .filter_map(|x| x)
+    .flatten()
     .collect()
 }
 
 #[get("/getcomment?<pid>")]
-pub async fn get_comment(pid: i32, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonAPI {
+pub async fn get_comment(pid: i32, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonApi {
     let p = Post::get(&db, &rconn, pid).await?;
     if p.is_deleted {
-        return Err(APIError::PcError(IsDeleted));
+        return Err(ApiError::Pc(IsDeleted));
     }
     let cs = p.get_comments(&db, &rconn).await?;
-    let hash_list = cs.iter().map(|c| &c.author_hash).collect();
+    let hash_list = cs.iter().map(|c| &c.author_hash).collect::<Vec<_>>();
     let cached_block_dict = BlockDictCache::init(&user.namehash, p.id, &rconn)
         .get_or_create(&user, &hash_list)
         .await?;
@@ -118,7 +118,7 @@ pub async fn add_comment(
     user: CurrentUser,
     db: Db,
     rconn: RdsConn,
-) -> JsonAPI {
+) -> JsonApi {
     let mut p = Post::get(&db, &rconn, ci.pid).await?;
     let c = Comment::create(
         &db,

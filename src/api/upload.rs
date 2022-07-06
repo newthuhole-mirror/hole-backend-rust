@@ -1,10 +1,10 @@
-use crate::api::{CurrentUser, JsonAPI};
+use crate::api::{CurrentUser, JsonApi};
 use rocket::fs::TempFile;
 use rocket::serde::json::json;
 use std::process::Command;
 
 #[post("/upload", data = "<file>")]
-pub async fn ipfs_upload(_user: CurrentUser, file: TempFile<'_>) -> JsonAPI {
+pub async fn ipfs_upload(_user: CurrentUser, file: TempFile<'_>) -> JsonApi {
     // dbg!(&file);
 
     // dbg!(&file.path());
@@ -21,7 +21,7 @@ pub async fn ipfs_upload(_user: CurrentUser, file: TempFile<'_>) -> JsonAPI {
         // dbg!(&output);
         let hash = std::str::from_utf8(&output.stdout)
             .unwrap()
-            .split_terminator("\n")
+            .split_terminator('\n')
             .last()
             .unwrap_or_else(|| {
                 dbg!(&output);

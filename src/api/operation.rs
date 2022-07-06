@@ -1,4 +1,4 @@
-use crate::api::{APIError, CurrentUser, JsonAPI, PolicyError::*, UGC};
+use crate::api::{ApiError, CurrentUser, JsonApi, PolicyError::*, Ugc};
 use crate::cache::*;
 use crate::db_conn::Db;
 use crate::libs::diesel_logger::LoggingConnection;
@@ -20,7 +20,7 @@ pub struct DeleteInput {
 }
 
 #[post("/delete", data = "<di>")]
-pub async fn delete(di: Form<DeleteInput>, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonAPI {
+pub async fn delete(di: Form<DeleteInput>, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonApi {
     let (author_hash, p) = match di.id_type.as_str() {
         "cid" => {
             let mut c = Comment::get(&db, di.id).await?;
@@ -98,7 +98,7 @@ pub struct ReportInput {
 }
 
 #[post("/report", data = "<ri>")]
-pub async fn report(ri: Form<ReportInput>, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonAPI {
+pub async fn report(ri: Form<ReportInput>, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonApi {
     // 临时用户不允许举报
     user.id.ok_or(NotAllowed)?;
 
@@ -154,10 +154,10 @@ pub struct BlockInput {
 }
 
 #[post("/block", data = "<bi>")]
-pub async fn block(bi: Form<BlockInput>, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonAPI {
-    user.id.ok_or_else(|| NotAllowed)?;
+pub async fn block(bi: Form<BlockInput>, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonApi {
+    user.id.ok_or(NotAllowed)?;
 
-    let mut blk = BlockedUsers::init(user.id.ok_or_else(|| NotAllowed)?, &rconn);
+    let mut blk = BlockedUsers::init(user.id.ok_or(NotAllowed)?, &rconn);
 
     let pid;
     let nh_to_block = match bi.content_type.as_str() {
@@ -171,7 +171,7 @@ pub async fn block(bi: Form<BlockInput>, user: CurrentUser, db: Db, rconn: RdsCo
             pid = c.post_id;
             c.author_hash
         }
-        _ => return Err(APIError::PcError(NotAllowed)),
+        _ => return Err(ApiError::Pc(NotAllowed)),
     };
 
     if nh_to_block.eq(&user.namehash) {
@@ -203,7 +203,7 @@ pub struct TitleInput {
 }
 
 #[post("/title", data = "<ti>")]
-pub async fn set_title(ti: Form<TitleInput>, user: CurrentUser, rconn: RdsConn) -> JsonAPI {
+pub async fn set_title(ti: Form<TitleInput>, user: CurrentUser, rconn: RdsConn) -> JsonApi {
     if CustomTitle::set(&rconn, &user.namehash, &ti.title).await? {
         code0!()
     } else {
@@ -221,7 +221,7 @@ pub async fn set_auto_block(
     ai: Form<AutoBlockInput>,
     user: CurrentUser,
     rconn: RdsConn,
-) -> JsonAPI {
+) -> JsonApi {
     AutoBlockRank::set(&rconn, &user.namehash, ai.rank).await?;
     code0!()
 }

@@ -284,10 +284,10 @@ impl PollVote {
 }
 
 pub async fn clear_outdate_redis_data(rconn: &RdsConn) {
-    BannedUsers::clear(&rconn).await.unwrap();
-    CustomTitle::clear(&rconn).await.unwrap();
-    AutoBlockRank::clear(&rconn).await.unwrap();
-    Attention::clear_all(&rconn).await;
+    BannedUsers::clear(rconn).await.unwrap();
+    CustomTitle::clear(rconn).await.unwrap();
+    AutoBlockRank::clear(rconn).await.unwrap();
+    Attention::clear_all(rconn).await;
 }
 
 pub(crate) use init;

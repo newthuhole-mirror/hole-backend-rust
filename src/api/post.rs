@@ -1,6 +1,6 @@
 use crate::api::comment::{c2output, CommentOutput};
 use crate::api::vote::get_poll_dict;
-use crate::api::{CurrentUser, JsonAPI, PolicyError::*, API, UGC};
+use crate::api::{CurrentUser, JsonApi, PolicyError::*, Api, Ugc};
 use crate::cache::*;
 use crate::db_conn::Db;
 use crate::libs::diesel_logger::LoggingConnection;
@@ -63,7 +63,7 @@ pub struct CwInput {
     cw: String,
 }
 
-async fn p2output(p: &Post, user: &CurrentUser, db: &Db, rconn: &RdsConn) -> API<PostOutput> {
+async fn p2output(p: &Post, user: &CurrentUser, db: &Db, rconn: &RdsConn) -> Api<PostOutput> {
     let comments: Option<Vec<Comment>> = if p.n_comments < 5 {
         Some(p.get_comments(db, rconn).await?)
     } else {
@@ -74,10 +74,10 @@ async fn p2output(p: &Post, user: &CurrentUser, db: &Db, rconn: &RdsConn) -> API
         .flatten()
         .map(|c| &c.author_hash)
         .chain(std::iter::once(&p.author_hash))
-        .collect();
+        .collect::<Vec<_>>();
     //dbg!(&hash_list);
     let cached_block_dict = BlockDictCache::init(&user.namehash, p.id, rconn)
-        .get_or_create(&user, &hash_list)
+        .get_or_create(user, &hash_list)
         .await?;
     let is_blocked = cached_block_dict[&p.author_hash];
     let can_view =
@@ -100,9 +100,9 @@ async fn p2output(p: &Post, user: &CurrentUser, db: &Db, rconn: &RdsConn) -> API
         )
         .await,
         can_del: p.check_permission(user, "wd").is_ok(),
-        attention: Attention::init(&user.namehash, &rconn).has(p.id).await?,
+        attention: Attention::init(&user.namehash, rconn).has(p.id).await?,
         hot_score: user.is_admin.then(|| p.hot_score),
-        is_blocked: is_blocked,
+        is_blocked,
         blocked_count: if user.is_admin {
             BlockCounter::get_count(rconn, &p.author_hash).await?
         } else {
@@ -122,20 +122,20 @@ async fn p2output(p: &Post, user: &CurrentUser, db: &Db, rconn: &RdsConn) -> API
 }
 
 pub async fn ps2outputs(
-    ps: &Vec<Post>,
+    ps: &[Post],
     user: &CurrentUser,
     db: &Db,
     rconn: &RdsConn,
-) -> API<Vec<PostOutput>> {
+) -> Api<Vec<PostOutput>> {
     future::try_join_all(
         ps.iter()
-            .map(|p| async { Ok(p2output(p, &user, &db, &rconn).await?) }),
+            .map(|p| async { p2output(p, user, db, rconn).await }),
     )
     .await
 }
 
 #[get("/getone?<pid>")]
-pub async fn get_one(pid: i32, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonAPI {
+pub async fn get_one(pid: i32, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonApi {
     let p = Post::get(&db, &rconn, pid).await?;
     p.check_permission(&user, "ro")?;
     Ok(json!({
@@ -151,8 +151,8 @@ pub async fn get_list(
     user: CurrentUser,
     db: Db,
     rconn: RdsConn,
-) -> JsonAPI {
-    user.id.ok_or_else(|| YouAreTmp)?;
+) -> JsonApi {
+    user.id.ok_or(YouAreTmp)?;
     let page = p.unwrap_or(1);
     let page_size = 25;
     let start = (page - 1) * page_size;
@@ -173,7 +173,7 @@ pub async fn publish_post(
     user: CurrentUser,
     db: Db,
     rconn: RdsConn,
-) -> JsonAPI {
+) -> JsonApi {
     let p = Post::create(
         &db,
         NewPost {
@@ -199,7 +199,7 @@ pub async fn publish_post(
 }
 
 #[post("/editcw", data = "<cwi>")]
-pub async fn edit_cw(cwi: Form<CwInput>, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonAPI {
+pub async fn edit_cw(cwi: Form<CwInput>, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonApi {
     let mut p = Post::get(&db, &rconn, cwi.pid).await?;
     p.check_permission(&user, "w")?;
     update!(p, posts, &db, { cw, to cwi.cw.to_string() });
@@ -208,8 +208,8 @@ pub async fn edit_cw(cwi: Form<CwInput>, user: CurrentUser, db: Db, rconn: RdsCo
 }
 
 #[get("/getmulti?<pids>")]
-pub async fn get_multi(pids: Vec<i32>, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonAPI {
-    user.id.ok_or_else(|| YouAreTmp)?;
+pub async fn get_multi(pids: Vec<i32>, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonApi {
+    user.id.ok_or(YouAreTmp)?;
     let ps = Post::get_multi(&db, &rconn, &pids).await?;
     let ps_data = ps2outputs(&ps, &user, &db, &rconn).await?;
 

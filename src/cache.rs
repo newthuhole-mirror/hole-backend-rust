@@ -28,7 +28,7 @@ pub struct PostCache {
 impl PostCache {
     init!();
 
-    pub async fn sets(&mut self, ps: &Vec<&Post>) {
+    pub async fn sets(&mut self, ps: &[&Post]) {
         if ps.is_empty() {
             return;
         }
@@ -61,7 +61,7 @@ impl PostCache {
         })
     }
 
-    pub async fn gets(&mut self, pids: &Vec<i32>) -> Vec<Option<Post>> {
+    pub async fn gets(&mut self, pids: &[i32]) -> Vec<Option<Post>> {
         // 长度为1时会走GET而非MGET，返回值格式不兼容。愚蠢的设计。
         match pids.len() {
             0 => vec![],
@@ -128,7 +128,7 @@ pub struct PostCommentCache {
 impl PostCommentCache {
     init!(i32, "hole_v2:cache:post_comments:{}");
 
-    pub async fn set(&mut self, cs: &Vec<Comment>) {
+    pub async fn set(&mut self, cs: &[Comment]) {
         self.rconn
             .set_ex(
                 &self.key,
@@ -183,7 +183,7 @@ impl PostListCommentCache {
     pub fn init(mode: u8, rconn: &RdsConn) -> Self {
         Self {
             key: format!("hole_v2:cache:post_list:{}", &mode),
-            mode: mode,
+            mode,
             rconn: rconn.clone(),
             length: 0,
         }
@@ -229,7 +229,7 @@ impl PostListCommentCache {
         )
     }
 
-    pub async fn fill(&mut self, ps: &Vec<Post>) {
+    pub async fn fill(&mut self, ps: &[Post]) {
         let items: Vec<(i64, i32)> = ps.iter().map(|p| self.p2pair(p)).collect();
         self.rconn
             .zadd_multiple(&self.key, &items)
@@ -337,7 +337,7 @@ impl BlockDictCache {
     pub async fn get_or_create(
         &mut self,
         user: &CurrentUser,
-        hash_list: &Vec<&String>,
+        hash_list: &[&String],
     ) -> RedisResult<HashMap<String, bool>> {
         let mut block_dict = self
             .rconn

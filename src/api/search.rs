@@ -1,5 +1,5 @@
 use crate::api::post::ps2outputs;
-use crate::api::{CurrentUser, JsonAPI, PolicyError::*};
+use crate::api::{CurrentUser, JsonApi, PolicyError::*};
 use crate::db_conn::Db;
 use crate::models::*;
 use crate::rds_conn::RdsConn;
@@ -13,17 +13,13 @@ pub async fn search(
     user: CurrentUser,
     db: Db,
     rconn: RdsConn,
-) -> JsonAPI {
-    user.id.ok_or_else(|| YouAreTmp)?;
+) -> JsonApi {
+    user.id.ok_or(YouAreTmp)?;
 
     let page_size = 25;
     let start = (page - 1) * page_size;
 
-    let kws = keywords
-        .split(" ")
-        .filter(|x| !x.is_empty())
-        .collect::<Vec<&str>>();
-    let ps = if kws.is_empty() {
+    let ps = if !keywords.chars().any(|c| !c.eq(&' ')) {
         vec![]
     } else {
         Post::search(

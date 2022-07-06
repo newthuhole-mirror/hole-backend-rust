@@ -91,7 +91,7 @@ impl<'r> FromRequest<'r> for CurrentUser {
                     Outcome::Failure((Status::Forbidden, ()))
                 } else {
                     Outcome::Success(CurrentUser {
-                        id: id,
+                        id,
                         custom_title: CustomTitle::get(&rconn, &nh)
                             .await
                             .ok()
@@ -99,7 +99,7 @@ impl<'r> FromRequest<'r> for CurrentUser {
                             .unwrap_or_default(),
                         auto_block_rank: AutoBlockRank::get(&rconn, &nh).await.unwrap_or(2),
                         namehash: nh,
-                        is_admin: is_admin,
+                        is_admin,
                     })
                 }
             }
@@ -119,20 +119,20 @@ pub enum PolicyError {
 }
 
 #[derive(Debug)]
-pub enum APIError {
-    DbError(diesel::result::Error),
-    RdsError(redis::RedisError),
-    PcError(PolicyError),
-    IoError(std::io::Error),
+pub enum ApiError {
+    Db(diesel::result::Error),
+    Rds(redis::RedisError),
+    Pc(PolicyError),
+    IO(std::io::Error),
 }
 
-impl<'r> Responder<'r, 'static> for APIError {
+impl<'r> Responder<'r, 'static> for ApiError {
     fn respond_to(self, req: &'r Request<'_>) -> response::Result<'static> {
         match self {
-            APIError::DbError(e) => e2s!(e).respond_to(req),
-            APIError::RdsError(e) => e2s!(e).respond_to(req),
-            APIError::IoError(e) => e2s!(e).respond_to(req),
-            APIError::PcError(e) => json!({
+            ApiError::Db(e) => e2s!(e).respond_to(req),
+            ApiError::Rds(e) => e2s!(e).respond_to(req),
+            ApiError::IO(e) => e2s!(e).respond_to(req),
+            ApiError::Pc(e) => json!({
                 "code": -1,
                 "msg": match e {
                     PolicyError::IsReported => "内容被举报，处理中",
@@ -148,60 +148,60 @@ impl<'r> Responder<'r, 'static> for APIError {
     }
 }
 
-impl From<diesel::result::Error> for APIError {
-    fn from(err: diesel::result::Error) -> APIError {
-        APIError::DbError(err)
+impl From<diesel::result::Error> for ApiError {
+    fn from(err: diesel::result::Error) -> ApiError {
+        ApiError::Db(err)
     }
 }
 
-impl From<redis::RedisError> for APIError {
-    fn from(err: redis::RedisError) -> APIError {
-        APIError::RdsError(err)
+impl From<redis::RedisError> for ApiError {
+    fn from(err: redis::RedisError) -> ApiError {
+        ApiError::Rds(err)
     }
 }
 
-impl From<std::io::Error> for APIError {
-    fn from(err: std::io::Error) -> APIError {
-        APIError::IoError(err)
+impl From<std::io::Error> for ApiError {
+    fn from(err: std::io::Error) -> ApiError {
+        ApiError::IO(err)
     }
 }
 
-impl From<PolicyError> for APIError {
-    fn from(err: PolicyError) -> APIError {
-        APIError::PcError(err)
+impl From<PolicyError> for ApiError {
+    fn from(err: PolicyError) -> ApiError {
+        ApiError::Pc(err)
     }
 }
 
-pub type API<T> = Result<T, APIError>;
-pub type JsonAPI = API<Value>;
+pub type Api<T> = Result<T, ApiError>;
+pub type JsonApi = Api<Value>;
 
 #[rocket::async_trait]
-pub trait UGC {
+pub trait Ugc {
     fn get_author_hash(&self) -> &str;
     fn get_is_deleted(&self) -> bool;
     fn get_is_reported(&self) -> bool;
     fn extra_delete_condition(&self) -> bool;
-    async fn do_set_deleted(&mut self, db: &Db) -> API<()>;
-    fn check_permission(&self, user: &CurrentUser, mode: &str) -> API<()> {
+    async fn do_set_deleted(&mut self, db: &Db) -> Api<()>;
+    fn check_permission(&self, user: &CurrentUser, mode: &str) -> Api<()> {
         if user.is_admin {
             return Ok(());
         }
         if mode.contains('r') && self.get_is_deleted() {
-            return Err(APIError::PcError(PolicyError::IsDeleted));
+            return Err(ApiError::Pc(PolicyError::IsDeleted));
         }
         if mode.contains('o') && self.get_is_reported() {
-            return Err(APIError::PcError(PolicyError::IsReported));
+            return Err(ApiError::Pc(PolicyError::IsReported));
         }
         if mode.contains('w') && self.get_author_hash() != user.namehash {
-            return Err(APIError::PcError(PolicyError::NotAllowed));
+            return Err(ApiError::Pc(PolicyError::NotAllowed));
         }
         if mode.contains('d') && !self.extra_delete_condition() {
-            return Err(APIError::PcError(PolicyError::NotAllowed));
+            return Err(ApiError::Pc(PolicyError::NotAllowed));
         }
         Ok(())
     }
 
-    async fn soft_delete(&mut self, user: &CurrentUser, db: &Db) -> API<()> {
+    async fn soft_delete(&mut self, user: &CurrentUser, db: &Db) -> Api<()> {
         self.check_permission(user, "rwd")?;
 
         self.do_set_deleted(db).await?;
@@ -210,7 +210,7 @@ pub trait UGC {
 }
 
 #[rocket::async_trait]
-impl UGC for Post {
+impl Ugc for Post {
     fn get_author_hash(&self) -> &str {
         &self.author_hash
     }
@@ -223,14 +223,14 @@ impl UGC for Post {
     fn extra_delete_condition(&self) -> bool {
         !self.content.starts_with("[系统自动代发]\n")
     }
-    async fn do_set_deleted(&mut self, db: &Db) -> API<()> {
+    async fn do_set_deleted(&mut self, db: &Db) -> Api<()> {
         update!(*self, posts, db, { is_deleted, to true });
         Ok(())
     }
 }
 
 #[rocket::async_trait]
-impl UGC for Comment {
+impl Ugc for Comment {
     fn get_author_hash(&self) -> &str {
         &self.author_hash
     }
@@ -243,7 +243,7 @@ impl UGC for Comment {
     fn extra_delete_condition(&self) -> bool {
         true
     }
-    async fn do_set_deleted(&mut self, db: &Db) -> API<()> {
+    async fn do_set_deleted(&mut self, db: &Db) -> Api<()> {
         update!(*self, comments, db, { is_deleted, to true });
         Ok(())
     }
