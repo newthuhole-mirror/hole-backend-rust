@@ -20,12 +20,12 @@ mkdir psql-docker-init
 wget https://git.thu.monster/newthuhole/hole-backend-rust/raw/branch/master/psql-docker-init/add_pg_trgm.sh -O psql-docker-init/add_pg_trgm.sh 
 
 
-#下载镜像
+# 下载镜像
 docker-compose pull
 # 初始化postgres
 docker-compose up -d postgres
 
-#建表
+# 建表
 docker-compose run --rm hole-thu hole-thu --init-database  
 
 # 全部跑起来
@@ -40,7 +40,9 @@ docker-compose up -d
 docker-compose stop
 ```
 
-可能需要修改`docker-compose.yml`的情况：
+需要修改`docker-compose.yml`的情况：
+
++ 编辑services.hole-thu.environmen填入你的后端地址(用于登陆时的回调跳转)和前端地址(用于允许跨域)
 
 + 如果希望使用其他端口而非8000，编辑services.hole-thu.ports
 

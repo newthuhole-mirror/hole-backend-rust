@@ -25,3 +25,5 @@ services:
       ROCKET_DATABASES: '{pg_v2={url="postgres://hole:hole_pass@postgres/hole_v2"}}'
       ROCKET_ADDRESS: "0.0.0.0"
       ROCKET_PORT: 8863 
+      AUTH_BACKEND_URL: "<你的后端地址>"
+      FRONTEND_WHITELIST: "<你的前端地址1>,<你的前端地址2>"
