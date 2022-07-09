@@ -1,0 +1,6 @@
+/target
+Cargo.lock
+rust-toolchain
+/user_files
+*.db
+.env

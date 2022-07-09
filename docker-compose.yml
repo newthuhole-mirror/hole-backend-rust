@@ -1,0 +1,27 @@
+version: '1'
+
+services:
+  postgres:
+    image: postgres:14.3
+    restart: unless-stopped
+    volumes:
+      - "./data/postgres:/var/lib/postgresql/data"
+      - "./psql-docker-init:/docker-entrypoint-initdb.d"
+    environment:
+      POSTGRES_PASSWORD: hole_pass
+      POSTGRES_USER: hole
+      POSTGRES_DB: hole_v2
+  redis:
+    image: redis:7.0.2
+    restart: unless-stopped
+  hole-thu:
+    image: holethu/hole-backend-rust:1.2.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8000:8863"
+    environment:
+      DATABASE_URL: "postgres://hole:hole_pass@postgres/hole_v2"
+      REDIS_URL: "redis://redis:6379"
+      ROCKET_DATABASES: '{pg_v2={url="postgres://hole:hole_pass@postgres/hole_v2"}}'
+      ROCKET_ADDRESS: "0.0.0.0"
+      ROCKET_PORT: 8863 
