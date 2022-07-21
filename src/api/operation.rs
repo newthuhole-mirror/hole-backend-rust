@@ -95,6 +95,7 @@ pub struct ReportInput {
     pid: i32,
     #[field(validate = len(0..1000))]
     reason: String,
+    should_hide: Option<u8>,
 }
 
 #[post("/report", data = "<ri>")]
@@ -113,8 +114,10 @@ pub async fn report(ri: Form<ReportInput>, user: CurrentUser, db: Db, rconn: Rds
     (!ri.reason.is_empty()).then(|| ()).ok_or(NoReason)?;
 
     let mut p = Post::get(&db, &rconn, ri.pid).await?;
-    update!(p, posts, &db, { is_reported, to true });
-    p.refresh_cache(&rconn, false).await;
+    if ri.should_hide.is_some() {
+        update!(p, posts, &db, { is_reported, to true });
+        p.refresh_cache(&rconn, false).await;
+    }
 
     Systemlog {
         user_hash: user.namehash.to_string(),

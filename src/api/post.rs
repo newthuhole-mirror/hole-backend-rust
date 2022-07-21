@@ -1,6 +1,6 @@
 use crate::api::comment::{c2output, CommentOutput};
 use crate::api::vote::get_poll_dict;
-use crate::api::{CurrentUser, JsonApi, PolicyError::*, Api, Ugc};
+use crate::api::{Api, CurrentUser, JsonApi, PolicyError::*, Ugc};
 use crate::cache::*;
 use crate::db_conn::Db;
 use crate::libs::diesel_logger::LoggingConnection;
