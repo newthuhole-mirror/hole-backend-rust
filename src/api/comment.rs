@@ -15,7 +15,6 @@ use std::collections::HashMap;
 
 #[derive(FromForm)]
 pub struct CommentInput {
-    pid: i32,
     #[field(validate = len(1..12289))]
     text: String,
     use_title: Option<i8>,
@@ -112,14 +111,20 @@ pub async fn get_comment(pid: i32, user: CurrentUser, db: Db, rconn: RdsConn) ->
     }))
 }
 
-#[post("/docomment", data = "<ci>")]
+#[post("/docomment")]
+pub async fn old_add_comment() -> ApiError {
+    OldApi.into()
+}
+
+#[post("/post/<pid>/comment", data = "<ci>")]
 pub async fn add_comment(
+    pid: i32,
     ci: Form<CommentInput>,
     user: CurrentUser,
     db: Db,
     rconn: RdsConn,
 ) -> JsonApi {
-    let mut p = Post::get(&db, &rconn, ci.pid).await?;
+    let mut p = Post::get(&db, &rconn, pid).await?;
     let c = Comment::create(
         &db,
         NewComment {
@@ -132,7 +137,7 @@ pub async fn add_comment(
             })
             .unwrap_or_default(),
             is_tmp: user.id.is_none(),
-            post_id: ci.pid,
+            post_id: pid,
         },
     )
     .await?;

@@ -64,7 +64,7 @@ async fn main() -> Result<(), rocket::Error> {
             "/_api/v1",
             routes![
                 api::comment::get_comment,
-                api::comment::add_comment,
+                api::comment::old_add_comment,
                 api::post::get_list,
                 api::post::get_one,
                 api::post::publish_post,
@@ -84,6 +84,7 @@ async fn main() -> Result<(), rocket::Error> {
                 cors::options_handler,
             ],
         )
+        .mount("/_api/v2", routes![api::comment::add_comment])
         .mount(
             "/_login",
             [

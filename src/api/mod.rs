@@ -116,6 +116,7 @@ pub enum PolicyError {
     TitleUsed,
     YouAreTmp,
     NoReason,
+    OldApi,
 }
 
 #[derive(Debug)]
@@ -141,6 +142,7 @@ impl<'r> Responder<'r, 'static> for ApiError {
                     PolicyError::TitleUsed => "头衔已被使用",
                     PolicyError::YouAreTmp => "临时用户只可发布内容和进入单个洞",
                     PolicyError::NoReason => "未填写理由",
+                    PolicyError::OldApi => "请使用最新版前端地址并检查更新"
                 }
             })
             .respond_to(req),
