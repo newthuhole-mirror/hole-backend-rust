@@ -25,6 +25,7 @@ macro_rules! code0 {
     );
 }
 
+/*
 macro_rules! code1 {
     ($msg:expr) => (
         Ok(json!({
@@ -33,6 +34,7 @@ macro_rules! code1 {
         }))
     );
 }
+*/
 
 macro_rules! e2s {
     ($e:expr) => (json!({

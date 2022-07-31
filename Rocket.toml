@@ -1,3 +1,2 @@
 [default]
 limits = { file = "200MB" }
-temp_dir = "user_files"
