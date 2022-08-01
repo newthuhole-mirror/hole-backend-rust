@@ -86,7 +86,11 @@ async fn main() -> Result<(), rocket::Error> {
         )
         .mount(
             "/_api/v2",
-            routes![api::comment::add_comment, api::upload::local_upload,],
+            routes![
+                api::comment::add_comment,
+                api::upload::local_upload,
+                cors::options_handler,
+            ],
         )
         .mount(
             "/_login",
