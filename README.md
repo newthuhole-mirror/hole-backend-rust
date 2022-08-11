@@ -1,54 +1,72 @@
-# hole-backend-rust v1.2.0
+# hole-backend-rust v1.3.0
 
 
 ## 部署
 
 ### 使用docker
 
-+ 安装docker-compose
++ 安装最新版docker与docker-compose-plugin
+
+  以Ubuntu为例: https://docs.docker.com/engine/install/ubuntu/
+
+  检查docker版本:
+
+  ```shell
+  $ docker --version
+  Docker version 20.10.17, build 100c701
+  ```
+
 
 + 执行
-```shell
-mkdir hole
-cd hole
 
-# 下载docker-compose.yml
-wget https://git.thu.monster/newthuhole/hole-backend-rust/raw/branch/master/docker-compose.yml
+  ```shell
+  mkdir hole
+  cd hole
+  
+  # 下载docker-compose.yml
+  wget https://git.thu.monster/newthuhole/hole-backend-rust/raw/branch/master/docker-compose.yml
+  
+  # 下载add_pg_trgm.sh
+  mkdir psql-docker-init
+  wget https://git.thu.monster/newthuhole/hole-backend-rust/raw/branch/master/psql-docker-init/add_pg_trgm.sh -O psql-docker-init/add_pg_trgm.sh
+  
+  
+  # 下载镜像
+  docker compose pull
+  # 初始化postgres
+  docker compose up -d postgres
+  
+  # 建表
+  docker compose run --rm hole-thu hole-thu --init-database
+  
+  # 全部跑起来
+  docker compose up -d
+  ```
+  
+  现在树洞后端应该已经运行在8000端口了
+  
+  停止运行：
+  
+  ```shell
+  docker compose stop
+  ```
+  
+  如需创建管理员账户，执行:
+  
+  ```shell
+  docker compose exec postgres psql --username hole --dbname hole_v2
+  ```
+  
+  进入数据库，执行需要的SQL命令。
 
-# 下载add_pg_trgm.sh
-mkdir psql-docker-init
-wget https://git.thu.monster/newthuhole/hole-backend-rust/raw/branch/master/psql-docker-init/add_pg_trgm.sh -O psql-docker-init/add_pg_trgm.sh 
 
++ 修改`docker-compose.yml`的情况：
 
-# 下载镜像
-docker-compose pull
-# 初始化postgres
-docker-compose up -d postgres
+  + 编辑services.hole-thu.environmen填入你的后端地址(用于登陆时的回调跳转)和前端地址(用于允许跨域)
 
-# 建表
-docker-compose run --rm hole-thu hole-thu --init-database  
+  + 如果希望使用其他端口而非8000，编辑services.hole-thu.ports
 
-# 全部跑起来
-docker-compose up -d
-```
-
-现在树洞后端应该已经运行在8000端口了
-
-停止运行：
-
-```shell
-docker-compose stop
-```
-
-需要修改`docker-compose.yml`的情况：
-
-+ 编辑services.hole-thu.environmen填入你的后端地址(用于登陆时的回调跳转)和前端地址(用于允许跨域)
-
-+ 如果希望使用其他端口而非8000，编辑services.hole-thu.ports
-
-+ 你可能需要映射postgres的5432端口用于在宿主机上连接以创建管理员账号，但也可以在`add_pg_trgm.sh`中添加创建管理员账号的sql语句或新增加一个`create_admin.sh`
-
-+ 如果需要使用闭社登陆，请在services.hole-thu.environment中添加需要用到的更多环境变量(参考`.env.sample`)
+  + 如果需要使用闭社登陆，请在services.hole-thu.environment中添加需要用到的更多环境变量(参考`.env.sample`)
 
 ### 使用源码编译
 

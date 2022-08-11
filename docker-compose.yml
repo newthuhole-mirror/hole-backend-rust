@@ -19,6 +19,8 @@ services:
     restart: unless-stopped
     ports:
       - "127.0.0.1:8000:8863"
+    volumes:
+      - "./data/user_files:/user_files"
     environment:
       DATABASE_URL: "postgres://hole:hole_pass@postgres/hole_v2"
       REDIS_URL: "redis://redis:6379"
@@ -27,3 +29,4 @@ services:
       ROCKET_PORT: 8863 
       AUTH_BACKEND_URL: "<你的后端地址>"
       FRONTEND_WHITELIST: "<你的前端地址1>,<你的前端地址2>"
+      UPLOAD_DIR: "/user_files"
