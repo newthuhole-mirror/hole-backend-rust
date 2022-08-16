@@ -90,6 +90,7 @@ async fn main() -> Result<(), rocket::Error> {
                 api::comment::add_comment,
                 api::upload::local_upload,
                 cors::options_handler,
+                api::attention::set_notification,
             ],
         )
         .mount(

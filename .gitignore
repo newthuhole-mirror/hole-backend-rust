@@ -1,3 +1,6 @@
+# private key
+keys
+
 # --> sqlite3
 *.db
 

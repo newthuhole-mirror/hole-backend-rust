@@ -119,12 +119,14 @@ pub enum PolicyError {
     YouAreTmp,
     NoReason,
     OldApi,
+    UnknownPushEndpoint,
 }
 
 #[derive(Debug)]
 pub enum ApiError {
     Db(diesel::result::Error),
     Rds(redis::RedisError),
+    WebPush(web_push::WebPushError),
     Pc(PolicyError),
     IO(std::io::Error),
 }
@@ -134,6 +136,7 @@ impl<'r> Responder<'r, 'static> for ApiError {
         match self {
             ApiError::Db(e) => e2s!(e).respond_to(req),
             ApiError::Rds(e) => e2s!(e).respond_to(req),
+            ApiError::WebPush(e) => e2s!(e).respond_to(req),
             ApiError::IO(e) => e2s!(e).respond_to(req),
             ApiError::Pc(e) => json!({
                 "code": -1,
@@ -144,11 +147,18 @@ impl<'r> Responder<'r, 'static> for ApiError {
                     PolicyError::TitleUsed => "头衔已被使用",
                     PolicyError::YouAreTmp => "临时用户只可发布内容和进入单个洞",
                     PolicyError::NoReason => "未填写理由",
-                    PolicyError::OldApi => "请使用最新版前端地址并检查更新"
+                    PolicyError::OldApi => "请使用最新版前端地址并检查更新",
+                    PolicyError::UnknownPushEndpoint => "未知的浏览器推送地址",
                 }
             })
             .respond_to(req),
         }
+    }
+}
+
+impl From<web_push::WebPushError> for ApiError {
+    fn from(err: web_push::WebPushError) -> ApiError {
+        ApiError::WebPush(err)
     }
 }
 
