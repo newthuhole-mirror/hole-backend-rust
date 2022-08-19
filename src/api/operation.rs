@@ -140,6 +140,7 @@ pub async fn report(ri: Form<ReportInput>, user: CurrentUser, db: Db, rconn: Rds
             is_tmp: false,
             n_attentions: 1,
             allow_search: true,
+            room_id: 42,
         },
     )
     .await?;

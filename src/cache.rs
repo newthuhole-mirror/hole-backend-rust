@@ -172,17 +172,24 @@ impl PostCommentCache {
     }
 }
 
-pub struct PostListCommentCache {
+pub struct PostListCache {
     key: String,
     mode: u8,
     rconn: RdsConn,
     length: isize,
 }
 
-impl PostListCommentCache {
-    pub fn init(mode: u8, rconn: &RdsConn) -> Self {
+impl PostListCache {
+    pub fn init(room_id: Option<i32>, mode: u8, rconn: &RdsConn) -> Self {
         Self {
-            key: format!("hole_v2:cache:post_list:{}", &mode),
+            key: format!(
+                "hole_v2:cache:post_list:{}:{}",
+                match room_id {
+                    Some(i) => i.to_string(),
+                    None => "".to_owned(),
+                },
+                &mode
+            ),
             mode,
             rconn: rconn.clone(),
             length: 0,

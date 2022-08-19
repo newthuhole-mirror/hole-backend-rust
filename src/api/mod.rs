@@ -235,7 +235,7 @@ impl Ugc for Post {
         self.is_deleted
     }
     fn extra_delete_condition(&self) -> bool {
-        !self.content.starts_with("[系统自动代发]\n")
+        self.room_id != 42
     }
     async fn do_set_deleted(&mut self, db: &Db) -> Api<()> {
         update!(*self, posts, db, { is_deleted, to true });

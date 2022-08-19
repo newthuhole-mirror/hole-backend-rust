@@ -26,12 +26,14 @@ pub struct PostInput {
     use_title: Option<i8>,
     #[field(validate = len(0..97))]
     poll_options: Vec<String>,
+    room_id: Option<i32>,
 }
 
 #[derive(Serialize)]
 #[serde(crate = "rocket::serde")]
 pub struct PostOutput {
     pid: i32,
+    room_id: i32,
     text: String,
     cw: Option<String>,
     author_title: Option<String>,
@@ -84,6 +86,7 @@ async fn p2output(p: &Post, user: &CurrentUser, db: &Db, rconn: &RdsConn) -> Api
         user.is_admin || (!is_blocked && user.id.is_some() || user.namehash.eq(&p.author_hash));
     Ok(PostOutput {
         pid: p.id,
+        room_id: p.room_id,
         text: can_view.then(|| p.content.clone()).unwrap_or_default(),
         cw: (!p.cw.is_empty()).then(|| p.cw.clone()),
         n_attentions: p.n_attentions,
@@ -144,10 +147,11 @@ pub async fn get_one(pid: i32, user: CurrentUser, db: Db, rconn: RdsConn) -> Jso
     }))
 }
 
-#[get("/getlist?<p>&<order_mode>")]
+#[get("/getlist?<p>&<order_mode>&<room_id>")]
 pub async fn get_list(
     p: Option<u32>,
     order_mode: u8,
+    room_id: Option<i32>,
     user: CurrentUser,
     db: Db,
     rconn: RdsConn,
@@ -156,7 +160,15 @@ pub async fn get_list(
     let page = p.unwrap_or(1);
     let page_size = 25;
     let start = (page - 1) * page_size;
-    let ps = Post::gets_by_page(&db, &rconn, order_mode, start.into(), page_size.into()).await?;
+    let ps = Post::gets_by_page(
+        &db,
+        &rconn,
+        room_id,
+        order_mode,
+        start.into(),
+        page_size.into(),
+    )
+    .await?;
     let ps_data = ps2outputs(&ps, &user, &db, &rconn).await?;
     Ok(json!({
         "data": ps_data,
@@ -184,6 +196,7 @@ pub async fn publish_post(
             is_tmp: user.id.is_none(),
             n_attentions: 1,
             allow_search: poi.allow_search.is_some(),
+            room_id: poi.room_id.unwrap_or_default(),
         },
     )
     .await?;

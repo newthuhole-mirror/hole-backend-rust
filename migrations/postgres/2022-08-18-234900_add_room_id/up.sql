@@ -1,0 +1,3 @@
+-- Your SQL goes here
+ALTER TABLE posts
+ADD COLUMN room_id INTEGER NOT NULL DEFAULT 0

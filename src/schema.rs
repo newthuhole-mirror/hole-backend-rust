@@ -28,6 +28,7 @@ table! {
         is_reported -> Bool,
         hot_score -> Int4,
         allow_search -> Bool,
+        room_id -> Int4,
     }
 }
 

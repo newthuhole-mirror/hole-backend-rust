@@ -119,6 +119,7 @@ pub struct Post {
     pub is_reported: bool,
     pub hot_score: i32,
     pub allow_search: bool,
+    pub room_id: i32,
 }
 
 #[derive(Queryable, Insertable, Serialize, Deserialize, Debug)]
@@ -140,6 +141,7 @@ pub struct NewPost {
     pub is_tmp: bool,
     pub n_attentions: i32,
     pub allow_search: bool,
+    pub room_id: i32,
 }
 
 impl Post {
@@ -215,19 +217,21 @@ impl Post {
     pub async fn gets_by_page(
         db: &Db,
         rconn: &RdsConn,
+        room_id: Option<i32>,
         order_mode: u8,
         start: i64,
         limit: i64,
     ) -> QueryResult<Vec<Self>> {
-        let mut cacher = PostListCommentCache::init(order_mode, &rconn);
+        let mut cacher = PostListCache::init(room_id, order_mode, &rconn);
         if cacher.need_fill().await {
             let pids =
-                Self::_get_ids_by_page(db, order_mode.clone(), 0, cacher.i64_minlen()).await?;
+                Self::_get_ids_by_page(db, room_id, order_mode.clone(), 0, cacher.i64_minlen())
+                    .await?;
             let ps = Self::get_multi(db, rconn, &pids).await?;
             cacher.fill(&ps).await;
         }
         let pids = if start + limit > cacher.i64_len() {
-            Self::_get_ids_by_page(db, order_mode, start, limit).await?
+            Self::_get_ids_by_page(db, room_id, order_mode, start, limit).await?
         } else {
             cacher.get_pids(start, limit).await
         };
@@ -236,6 +240,7 @@ impl Post {
     }
     async fn _get_ids_by_page(
         db: &Db,
+        room_id: Option<i32>,
         order_mode: u8,
         start: i64,
         limit: i64,
@@ -243,7 +248,11 @@ impl Post {
         db.run(move |c| {
             let mut query = base_query!(posts).select(posts::id);
             if order_mode > 0 {
-                query = query.filter(posts::is_reported.eq(false))
+                query = query.filter(posts::is_reported.eq(false));
+            }
+
+            if let Some(ri) = room_id {
+                query = query.filter(posts::room_id.eq(ri));
             }
 
             query = match order_mode {
@@ -262,6 +271,7 @@ impl Post {
     pub async fn search(
         db: &Db,
         rconn: &RdsConn,
+        room_id: Option<i32>,
         search_mode: u8,
         search_text: String,
         start: i64,
@@ -276,6 +286,9 @@ impl Post {
                     .distinct()
                     .left_join(comments::table)
                     .filter(posts::is_reported.eq(false));
+                if let Some(ri) = room_id {
+                    query = query.filter(posts::room_id.eq(ri));
+                }
                 // 先用搜索+缓存，性能有问题了再真的做tag表
                 query = match search_mode {
                     0 => {
@@ -334,9 +347,12 @@ impl Post {
         join!(
             self.set_instance_cache(rconn),
             future::join_all((if is_new { 0..4 } else { 1..4 }).map(|mode| async move {
-                PostListCommentCache::init(mode, &rconn.clone())
+                PostListCache::init(None, mode, &rconn.clone())
                     .put(self)
-                    .await
+                    .await;
+                PostListCache::init(Some(self.room_id), mode, &rconn.clone())
+                    .put(self)
+                    .await;
             })),
         );
     }
@@ -349,7 +365,9 @@ impl Post {
             .unwrap();
 
         PostCache::init(&rconn).clear_all().await;
-        PostListCommentCache::init(2, rconn).clear().await
+        for room_id in [None, Some(0), Some(1), Some(42)] {
+            PostListCache::init(room_id, 2, rconn).clear().await;
+        }
     }
 }
 

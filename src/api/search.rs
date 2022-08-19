@@ -5,8 +5,9 @@ use crate::models::*;
 use crate::rds_conn::RdsConn;
 use rocket::serde::json::json;
 
-#[get("/search?<search_mode>&<page>&<keywords>")]
+#[get("/search?<search_mode>&<page>&<keywords>&<room_id>")]
 pub async fn search(
+    room_id: Option<i32>,
     keywords: String,
     search_mode: u8,
     page: i32,
@@ -25,6 +26,7 @@ pub async fn search(
         Post::search(
             &db,
             &rconn,
+            room_id,
             search_mode,
             keywords.to_string(),
             start.into(),
