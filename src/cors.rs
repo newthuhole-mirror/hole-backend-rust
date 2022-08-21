@@ -1,3 +1,5 @@
+#![allow(clippy::let_unit_value)]
+
 use rocket::fairing::{Fairing, Info, Kind};
 use rocket::http::Header;
 use rocket::{Request, Response};

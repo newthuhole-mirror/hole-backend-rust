@@ -365,7 +365,7 @@ impl Post {
             .unwrap();
 
         PostCache::init(&rconn).clear_all().await;
-        for room_id in [None, Some(0), Some(1), Some(42)] {
+        for room_id in (0..5).map(Some).chain([None, Some(42)]) {
             PostListCache::init(room_id, 2, rconn).clear().await;
         }
     }

@@ -54,7 +54,7 @@ async fn main() -> Result<(), rocket::Error> {
     let rconn = RdsConn(rmc.clone());
     tokio::spawn(async move {
         loop {
-            for room_id in [None, Some(0), Some(1), Some(42)] {
+            for room_id in (0..5).map(Some).chain([None, Some(42)]) {
                 cache::PostListCache::init(room_id, 3, &rconn).clear().await;
             }
             sleep(Duration::from_secs(5 * 60)).await;
