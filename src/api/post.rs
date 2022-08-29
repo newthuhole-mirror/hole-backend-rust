@@ -170,11 +170,13 @@ pub async fn get_list(
     )
     .await?;
     let ps_data = ps2outputs(&ps, &user, &db, &rconn).await?;
+
     Ok(json!({
         "data": ps_data,
         "count": ps_data.len(),
         "custom_title": user.custom_title,
         "auto_block_rank": user.auto_block_rank,
+        "announcement": get_announcement(&rconn).await?,
         "code": 0
     }))
 }

@@ -52,6 +52,7 @@ const KEY_BANNED_USERS: &str = "hole_v2:banned_user_hash_list";
 const KEY_BLOCKED_COUNTER: &str = "hole_v2:blocked_counter";
 const KEY_CUSTOM_TITLE: &str = "hole_v2:title";
 const KEY_AUTO_BLOCK_RANK: &str = "hole_v2:auto_block_rank"; // rank * 5: 自动过滤的拉黑数阈值
+const KEY_ANNOUNCEMENT: &str = "hole_v2:announcement";
 
 const SYSTEMLOG_MAX_LEN: isize = 1000;
 
@@ -288,6 +289,10 @@ pub async fn clear_outdate_redis_data(rconn: &RdsConn) {
     CustomTitle::clear(rconn).await.unwrap();
     AutoBlockRank::clear(rconn).await.unwrap();
     Attention::clear_all(rconn).await;
+}
+
+pub async fn get_announcement(rconn: &RdsConn) -> RedisResult<Option<String>> {
+    rconn.clone().get(KEY_ANNOUNCEMENT).await
 }
 
 pub(crate) use init;
