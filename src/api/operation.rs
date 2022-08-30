@@ -208,7 +208,12 @@ pub struct TitleInput {
 
 #[post("/title", data = "<ti>")]
 pub async fn set_title(ti: Form<TitleInput>, user: CurrentUser, rconn: RdsConn) -> JsonApi {
-    if CustomTitle::set(&rconn, &user.namehash, &ti.title).await? {
+    let title: String = ti.title.chars().filter(|c| c.is_alphanumeric()).collect();
+    if title.is_empty() {
+        Err(TitleUsed)?
+    }
+
+    if CustomTitle::set(&rconn, &user.namehash, &title).await? {
         code0!()
     } else {
         Err(TitleUsed)?
