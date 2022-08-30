@@ -53,6 +53,8 @@ const KEY_BLOCKED_COUNTER: &str = "hole_v2:blocked_counter";
 const KEY_CUSTOM_TITLE: &str = "hole_v2:title";
 const KEY_AUTO_BLOCK_RANK: &str = "hole_v2:auto_block_rank"; // rank * 5: 自动过滤的拉黑数阈值
 const KEY_ANNOUNCEMENT: &str = "hole_v2:announcement";
+const KEY_CANDIDATE: &str = "hole_v2:candidate";
+const KEY_ADMIN: &str = "hole_v2:admin";
 
 const SYSTEMLOG_MAX_LEN: isize = 1000;
 
@@ -293,6 +295,14 @@ pub async fn clear_outdate_redis_data(rconn: &RdsConn) {
 
 pub async fn get_announcement(rconn: &RdsConn) -> RedisResult<Option<String>> {
     rconn.clone().get(KEY_ANNOUNCEMENT).await
+}
+
+pub async fn is_elected_candidate(rconn: &RdsConn, namehash: &str) -> RedisResult<bool> {
+    rconn.clone().sismember(KEY_CANDIDATE, namehash).await
+}
+
+pub async fn is_elected_admin(rconn: &RdsConn, namehash: &str) -> RedisResult<bool> {
+    rconn.clone().sismember(KEY_ADMIN, namehash).await
 }
 
 pub(crate) use init;

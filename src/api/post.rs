@@ -197,13 +197,19 @@ pub async fn publish_post(
         poi.text.to_string()
     };
 
+    let use_title = poi.use_title.is_some() || user.is_admin || user.is_candidate;
+
     let p = Post::create(
         &db,
         NewPost {
             content: text,
             cw: poi.cw.to_string(),
             author_hash: user.namehash.to_string(),
-            author_title: poi.use_title.map(|_| user.custom_title).unwrap_or_default(),
+            author_title: if use_title {
+                user.custom_title
+            } else {
+                "".to_owned()
+            },
             is_tmp: user.id.is_none(),
             n_attentions: 1,
             allow_search: poi.allow_search.is_some(),

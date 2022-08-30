@@ -57,8 +57,26 @@ pub struct CurrentUser {
     pub id: Option<i32>, // tmp user has no id, only for block
     namehash: String,
     is_admin: bool,
+    is_candidate: bool,
     custom_title: String,
     pub auto_block_rank: u8,
+}
+
+impl CurrentUser {
+    pub async fn from_hash(rconn: &RdsConn, namehash: String) -> Self {
+        Self {
+            id: None,
+            is_admin: false,
+            is_candidate: false,
+            custom_title: CustomTitle::get(rconn, &namehash)
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_default(),
+            auto_block_rank: AutoBlockRank::get(rconn, &namehash).await.unwrap_or(2),
+            namehash,
+        }
+    }
 }
 
 #[rocket::async_trait]
@@ -68,44 +86,37 @@ impl<'r> FromRequest<'r> for CurrentUser {
         let rh = request.rocket().state::<RandomHasher>().unwrap();
         let rconn = try_outcome!(request.guard::<RdsConn>().await);
 
-        let mut id = None;
-        let mut namehash = None;
-        let mut is_admin = false;
-
-        if let Some(token) = request.headers().get_one("User-Token") {
-            let sp = token.split('_').collect::<Vec<&str>>();
-            if sp.len() == 2 && sp[0] == rh.get_tmp_token() {
-                namehash = Some(rh.hash_with_salt(sp[1]));
-                id = None;
-                is_admin = false;
-            } else {
-                let db = try_outcome!(request.guard::<Db>().await);
-                if let Some(u) = User::get_by_token(&db, &rconn, token).await {
-                    id = Some(u.id);
-                    namehash = Some(rh.hash_with_salt(&u.name));
-                    is_admin = u.is_admin;
-                }
-            }
-        }
-        match namehash {
-            Some(nh) => {
-                if BannedUsers::has(&rconn, &nh).await.unwrap() {
-                    Outcome::Failure((Status::Forbidden, ()))
+        if let Some(user) = {
+            if let Some(token) = request.headers().get_one("User-Token") {
+                let sp = token.split('_').collect::<Vec<&str>>();
+                if sp.len() == 2 && sp[0] == rh.get_tmp_token() {
+                    Some(CurrentUser::from_hash(&rconn, rh.hash_with_salt(sp[1])).await)
                 } else {
-                    Outcome::Success(CurrentUser {
-                        id,
-                        custom_title: CustomTitle::get(&rconn, &nh)
-                            .await
-                            .ok()
-                            .flatten()
-                            .unwrap_or_default(),
-                        auto_block_rank: AutoBlockRank::get(&rconn, &nh).await.unwrap_or(2),
-                        namehash: nh,
-                        is_admin,
-                    })
+                    let db = try_outcome!(request.guard::<Db>().await);
+                    if let Some(u) = User::get_by_token(&db, &rconn, token).await {
+                        let namehash = rh.hash_with_salt(&u.name);
+                        Some(CurrentUser {
+                            id: Some(u.id),
+                            is_admin: u.is_admin
+                                || is_elected_admin(&rconn, &namehash).await.unwrap(),
+                            is_candidate: is_elected_candidate(&rconn, &namehash).await.unwrap(),
+                            ..CurrentUser::from_hash(&rconn, namehash).await
+                        })
+                    } else {
+                        None
+                    }
                 }
+            } else {
+                None
             }
-            None => Outcome::Failure((Status::Unauthorized, ())),
+        } {
+            if BannedUsers::has(&rconn, &user.namehash).await.unwrap() {
+                Outcome::Failure((Status::Forbidden, ()))
+            } else {
+                Outcome::Success(user)
+            }
+        } else {
+            Outcome::Failure((Status::Unauthorized, ()))
         }
     }
 }
