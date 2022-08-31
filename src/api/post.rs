@@ -49,7 +49,7 @@ pub struct PostOutput {
     attention: bool,
     hot_score: Option<i32>,
     is_blocked: bool,
-    blocked_count: Option<i32>,
+    //blocked_count: Option<i32>,
     poll: Option<Value>,
     // for old version frontend
     timestamp: i64,
@@ -98,19 +98,20 @@ async fn p2output(p: &Post, user: &CurrentUser, db: &Db, rconn: &RdsConn) -> Api
         is_tmp: p.is_tmp,
         is_reported: user.is_admin.then(|| p.is_reported),
         comments: OptionFuture::from(
-            comments
-                .map(|cs| async move { c2output(p, &cs, user, &cached_block_dict, rconn).await }),
+            comments.map(|cs| async move { c2output(p, &cs, user, &cached_block_dict).await }),
         )
         .await,
         can_del: p.check_permission(user, "wd").is_ok(),
         attention: Attention::init(&user.namehash, rconn).has(p.id).await?,
         hot_score: user.is_admin.then(|| p.hot_score),
         is_blocked,
+        /*
         blocked_count: if user.is_admin {
             BlockCounter::get_count(rconn, &p.author_hash).await?
         } else {
             None
         },
+        */
         poll: if can_view {
             get_poll_dict(p.id, rconn, &user.namehash).await
         } else {

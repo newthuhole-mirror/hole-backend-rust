@@ -31,7 +31,7 @@ pub struct CommentOutput {
     is_tmp: bool,
     create_time: i64,
     is_blocked: bool,
-    blocked_count: Option<i32>,
+    //blocked_count: Option<i32>,
     // for old version frontend
     timestamp: i64,
     blocked: bool,
@@ -42,7 +42,7 @@ pub async fn c2output<'r>(
     cs: &[Comment],
     user: &CurrentUser,
     cached_block_dict: &HashMap<String, bool>,
-    rconn: &RdsConn,
+    //rconn: &RdsConn,
 ) -> Vec<CommentOutput> {
     let mut hash2id = HashMap::<&String, i32>::from([(&p.author_hash, 0)]);
     let name_ids_iter = cs.iter().map(|c| match hash2id.get(&c.author_hash) {
@@ -69,6 +69,7 @@ pub async fn c2output<'r>(
                 is_tmp: c.is_tmp,
                 create_time: c.create_time.timestamp(),
                 is_blocked,
+                /*
                 blocked_count: if user.is_admin {
                     BlockCounter::get_count(rconn, &c.author_hash)
                         .await
@@ -77,6 +78,7 @@ pub async fn c2output<'r>(
                 } else {
                     None
                 },
+                */
                 timestamp: c.create_time.timestamp(),
                 blocked: is_blocked,
             })
@@ -99,7 +101,7 @@ pub async fn get_comment(pid: i32, user: CurrentUser, db: Db, rconn: RdsConn) ->
     let cached_block_dict = BlockDictCache::init(&user.namehash, p.id, &rconn)
         .get_or_create(&user, &hash_list)
         .await?;
-    let data = c2output(&p, &cs, &user, &cached_block_dict, &rconn).await;
+    let data = c2output(&p, &cs, &user, &cached_block_dict).await;
 
     Ok(json!({
         "code": 0,
