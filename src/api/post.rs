@@ -188,21 +188,12 @@ pub async fn publish_post(
     db: Db,
     rconn: RdsConn,
 ) -> JsonApi {
-    let text = if poi.room_id.is_none() {
-        format!(
-            "{}\n\n---\n\n\\* 无效分区或来自旧版前端，已默认归档到0区。分区管理说明见 #100426，建议尽快更新前端(点击ⓘ ，点击“立即更新”)。",
-            &poi.text
-        )
-    } else {
-        poi.text.to_string()
-    };
-
     let use_title = poi.use_title.is_some() || user.is_admin || user.is_candidate;
 
     let p = Post::create(
         &db,
         NewPost {
-            content: text,
+            content: poi.text.to_string(),
             cw: poi.cw.to_string(),
             author_hash: user.namehash.to_string(),
             author_title: if use_title {
