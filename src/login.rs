@@ -1,3 +1,5 @@
+#![allow(clippy::unused_unit)]
+
 use crate::db_conn::Db;
 use crate::models::User;
 use rocket::request::{FromRequest, Outcome, Request};

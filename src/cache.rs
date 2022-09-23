@@ -355,7 +355,7 @@ impl BlockDictCache {
 
         let missing: Vec<(String, bool)> =
             future::try_join_all(hash_list.iter().filter_map(|hash| {
-                (!block_dict.contains_key(&hash.to_string())).then(|| async {
+                (!block_dict.contains_key(&hash.to_string())).then_some(async {
                     Ok::<(String, bool), RedisError>((
                         hash.to_string(),
                         BlockedUsers::check_if_block(&self.rconn, user, hash).await?,

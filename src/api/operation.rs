@@ -108,10 +108,10 @@ pub async fn report(ri: Form<ReportInput>, user: CurrentUser, db: Db, rconn: Rds
         .await?
         .unwrap_or(0)
         < 10)
-        .then(|| ())
+        .then_some(())
         .ok_or(NotAllowed)?;
 
-    (!ri.reason.is_empty()).then(|| ()).ok_or(NoReason)?;
+    (!ri.reason.is_empty()).then_some(()).ok_or(NoReason)?;
 
     let mut p = Post::get(&db, &rconn, ri.pid).await?;
     if ri.should_hide.is_some() {

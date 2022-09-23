@@ -18,7 +18,7 @@ pub async fn get_poll_dict(pid: i32, rconn: &RdsConn, namehash: &str) -> Option<
                 .has(namehash)
                 .await
                 .unwrap_or_default()
-                .then(|| opt)
+                .then_some(opt)
         }))
         .await
         .into_iter()

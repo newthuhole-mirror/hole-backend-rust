@@ -87,23 +87,23 @@ async fn p2output(p: &Post, user: &CurrentUser, db: &Db, rconn: &RdsConn) -> Api
     Ok(PostOutput {
         pid: p.id,
         room_id: p.room_id,
-        text: can_view.then(|| p.content.clone()).unwrap_or_default(),
-        cw: (!p.cw.is_empty()).then(|| p.cw.clone()),
+        text: can_view.then_some(p.content.clone()).unwrap_or_default(),
+        cw: (!p.cw.is_empty()).then_some(p.cw.clone()),
         n_attentions: p.n_attentions,
         n_comments: p.n_comments,
         create_time: p.create_time.timestamp(),
         last_comment_time: p.last_comment_time.timestamp(),
         allow_search: p.allow_search,
-        author_title: (!p.author_title.is_empty()).then(|| p.author_title.clone()),
+        author_title: (!p.author_title.is_empty()).then_some(p.author_title.clone()),
         is_tmp: p.is_tmp,
-        is_reported: user.is_admin.then(|| p.is_reported),
+        is_reported: user.is_admin.then_some(p.is_reported),
         comments: OptionFuture::from(
             comments.map(|cs| async move { c2output(p, &cs, user, &cached_block_dict).await }),
         )
         .await,
         can_del: p.check_permission(user, "wd").is_ok(),
         attention: Attention::init(&user.namehash, rconn).has(p.id).await?,
-        hot_score: user.is_admin.then(|| p.hot_score),
+        hot_score: user.is_admin.then_some(p.hot_score),
         is_blocked,
         /*
         blocked_count: if user.is_admin {

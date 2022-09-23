@@ -108,7 +108,7 @@ pub async fn set_notification(pid: i32, ni: Form<NotificatinInput>, _user: Curre
         .ok_or(UnknownPushEndpoint)?
         .to_string();
     (url_host.ends_with("googleapis.com") || url_host.ends_with("mozilla.com"))
-        .then(|| ())
+        .then_some(())
         .ok_or(UnknownPushEndpoint)?;
 
     if ni.enable {

@@ -28,17 +28,18 @@ use diesel::Connection;
 use random_hasher::RandomHasher;
 use rds_conn::{init_rds_client, RdsConn};
 use rds_models::clear_outdate_redis_data;
+use rocket::tokio;
+use rocket::tokio::time::{sleep, Duration};
 use std::env;
-use tokio::time::{sleep, Duration};
 
 embed_migrations!("migrations/postgres");
 
 #[rocket::main]
-async fn main() -> Result<(), rocket::Error> {
+async fn main() {
     load_env();
     if env::args().any(|arg| arg.eq("--init-database")) {
         init_database();
-        return Ok(());
+        return;
     }
     env_logger::init();
     let rmc = init_rds_client().await;
@@ -61,7 +62,7 @@ async fn main() -> Result<(), rocket::Error> {
         }
     });
 
-    rocket::build()
+    let _ = rocket::build()
         .mount(
             "/_api/v1",
             routes![
@@ -119,7 +120,7 @@ async fn main() -> Result<(), rocket::Error> {
                 .collect::<Vec<String>>(),
         })
         .launch()
-        .await
+        .await;
 }
 
 fn load_env() {

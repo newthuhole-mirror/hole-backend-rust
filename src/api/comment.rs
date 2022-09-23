@@ -7,9 +7,8 @@ use crate::rds_conn::RdsConn;
 use crate::rds_models::*;
 use crate::schema;
 use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
+use futures::{future, join};
 use rocket::form::Form;
-use rocket::futures::future;
-use rocket::futures::join;
 use rocket::serde::{json::json, Serialize};
 use std::collections::HashMap;
 
