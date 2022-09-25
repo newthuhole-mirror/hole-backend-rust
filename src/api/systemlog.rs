@@ -1,7 +1,7 @@
 use crate::api::{CurrentUser, JsonApi};
 use crate::random_hasher::RandomHasher;
 use crate::rds_conn::RdsConn;
-use crate::rds_models::Systemlog;
+use crate::rds_models::{get_admin_list, get_candidate_list, Systemlog};
 use rocket::serde::json::{json, Value};
 use rocket::State;
 
@@ -14,6 +14,8 @@ pub async fn get_systemlog(user: CurrentUser, rh: &State<RandomHasher>, rconn: R
         "salt": look!(rh.salt),
         "start_time": rh.start_time.timestamp(),
         "custom_title": user.custom_title,
+        "admin_list": get_admin_list(&rconn).await?,
+        "candidate_list": get_candidate_list(&rconn).await?,
         "data": logs.into_iter().map(|log|
             json!({
                 "type": log.action_type,

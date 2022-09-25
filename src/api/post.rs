@@ -177,6 +177,8 @@ pub async fn get_list(
         "count": ps_data.len(),
         "custom_title": user.custom_title,
         "title_secret": user.title_secret,
+        "is_admin": user.is_admin,
+        "is_candidate": user.is_candidate,
         "auto_block_rank": user.auto_block_rank,
         "announcement": get_announcement(&rconn).await?,
         "code": 0

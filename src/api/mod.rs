@@ -105,12 +105,17 @@ impl<'r> FromRequest<'r> for CurrentUser {
                     let db = try_outcome!(request.guard::<Db>().await);
                     if let Some(u) = User::get_by_token(&db, &rconn, token).await {
                         let namehash = rh.hash_with_salt(&u.name);
+                        let user_base = CurrentUser::from_hash(&rconn, namehash).await;
                         Some(CurrentUser {
                             id: Some(u.id),
                             is_admin: u.is_admin
-                                || is_elected_admin(&rconn, &namehash).await.unwrap(),
-                            is_candidate: is_elected_candidate(&rconn, &namehash).await.unwrap(),
-                            ..CurrentUser::from_hash(&rconn, namehash).await
+                                || is_elected_admin(&rconn, &user_base.custom_title)
+                                    .await
+                                    .unwrap(),
+                            is_candidate: is_elected_candidate(&rconn, &user_base.custom_title)
+                                .await
+                                .unwrap(),
+                            ..user_base
                         })
                     } else {
                         None

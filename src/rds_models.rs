@@ -233,9 +233,17 @@ impl CustomTitle {
             Err(PolicyError::TitleUsed)?
         } else {
             let ori_secret: Option<String> = rconn.get(KEY_TITLE_SECRET!(title)).await?;
+            if ori_secret.is_none() {
+                clear_title_from_admins(&rconn, title).await?;
+            }
             ori_secret
                 .map_or(Some(()), |s| (s.eq(&secret).then_some(())))
                 .ok_or(PolicyError::TitleProtected)?;
+
+            let old_title: Option<String> = rconn.hget(KEY_CUSTOM_TITLE, namehash).await?;
+            if let Some(t) = old_title {
+                clear_title_from_admins(&rconn, &t).await?;
+            }
             rconn.hset(KEY_CUSTOM_TITLE, namehash, title).await?;
             rconn.hset(KEY_CUSTOM_TITLE, title, namehash).await?;
             Ok(Self::gen_and_set_secret(&rconn, title).await?)
@@ -332,12 +340,33 @@ pub async fn get_announcement(rconn: &RdsConn) -> RedisResult<Option<String>> {
     rconn.clone().get(KEY_ANNOUNCEMENT).await
 }
 
-pub async fn is_elected_candidate(rconn: &RdsConn, namehash: &str) -> RedisResult<bool> {
-    rconn.clone().sismember(KEY_CANDIDATE, namehash).await
+pub async fn is_elected_candidate(rconn: &RdsConn, title: &str) -> RedisResult<bool> {
+    if title.is_empty() {
+        return Ok(false);
+    }
+    rconn.clone().sismember(KEY_CANDIDATE, title).await
 }
 
-pub async fn is_elected_admin(rconn: &RdsConn, namehash: &str) -> RedisResult<bool> {
-    rconn.clone().sismember(KEY_ADMIN, namehash).await
+pub async fn is_elected_admin(rconn: &RdsConn, title: &str) -> RedisResult<bool> {
+    if title.is_empty() {
+        return Ok(false);
+    }
+    rconn.clone().sismember(KEY_ADMIN, title).await
+}
+
+pub async fn get_admin_list(rconn: &RdsConn) -> RedisResult<Vec<String>> {
+    rconn.clone().smembers(KEY_ADMIN).await
+}
+
+pub async fn get_candidate_list(rconn: &RdsConn) -> RedisResult<Vec<String>> {
+    rconn.clone().smembers(KEY_CANDIDATE).await
+}
+
+pub async fn clear_title_from_admins(rconn: &RdsConn, title: &str) -> RedisResult<()> {
+    let mut rconn = rconn.clone();
+    rconn.srem(KEY_CANDIDATE, title).await?;
+    rconn.srem(KEY_ADMIN, title).await?;
+    Ok(())
 }
 
 pub(crate) use init;
