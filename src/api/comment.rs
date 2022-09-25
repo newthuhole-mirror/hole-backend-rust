@@ -112,11 +112,6 @@ pub async fn get_comment(pid: i32, user: CurrentUser, db: Db, rconn: RdsConn) ->
     }))
 }
 
-#[post("/docomment")]
-pub async fn old_add_comment() -> ApiError {
-    OldApi.into()
-}
-
 #[post("/post/<pid>/comment", data = "<ci>")]
 pub async fn add_comment(
     pid: i32,

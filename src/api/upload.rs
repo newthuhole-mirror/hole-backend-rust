@@ -1,13 +1,7 @@
-use super::PolicyError::OldApi;
-use super::{ApiError, CurrentUser, JsonApi};
+use super::{CurrentUser, JsonApi};
 use rocket::fs::TempFile;
 use rocket::serde::json::json;
 use std::env::var;
-
-#[post("/upload")]
-pub async fn ipfs_upload() -> ApiError {
-    OldApi.into()
-}
 
 #[post("/upload", data = "<file>")]
 pub async fn local_upload(_user: CurrentUser, mut file: TempFile<'_>) -> JsonApi {

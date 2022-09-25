@@ -67,7 +67,6 @@ async fn main() {
             "/_api/v1",
             routes![
                 api::comment::get_comment,
-                api::comment::old_add_comment,
                 api::post::get_list,
                 api::post::get_one,
                 api::post::publish_post,
@@ -82,7 +81,6 @@ async fn main() {
                 api::operation::block,
                 api::operation::set_auto_block,
                 api::vote::vote,
-                api::upload::ipfs_upload,
                 cors::options_handler,
             ],
         )
@@ -107,7 +105,11 @@ async fn main() {
         )
         .register(
             "/_api",
-            catchers![api::catch_401_error, api::catch_403_error,],
+            catchers![
+                api::catch_401_error,
+                api::catch_403_error,
+                api::catch_404_error
+            ],
         )
         .manage(RandomHasher::get_random_one())
         .manage(rmc)

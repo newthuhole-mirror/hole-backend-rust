@@ -55,6 +55,11 @@ pub fn catch_403_error() -> &'static str {
     "可能被封禁了，等下次重置吧"
 }
 
+#[catch(404)]
+pub fn catch_404_error() -> &'static str {
+    "请更新前端版本"
+}
+
 pub struct CurrentUser {
     pub id: Option<i32>, // tmp user has no id, only for block
     namehash: String,
@@ -136,7 +141,6 @@ pub enum PolicyError {
     InvalidTitle,
     YouAreTmp,
     NoReason,
-    OldApi,
     UnknownPushEndpoint,
 }
 
@@ -167,7 +171,6 @@ impl<'r> Responder<'r, 'static> for ApiError {
                     PolicyError::InvalidTitle => "头衔包含不允许的符号",
                     PolicyError::YouAreTmp => "临时用户只可发布内容和进入单个洞",
                     PolicyError::NoReason => "未填写理由",
-                    PolicyError::OldApi => "请使用最新版前端地址并检查更新",
                     PolicyError::UnknownPushEndpoint => "未知的浏览器推送地址",
                 }
             })
