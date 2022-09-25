@@ -1,8 +1,4 @@
-use crate::api::{
-    ApiError, CurrentUser, JsonApi,
-    PolicyError::{self, *},
-    Ugc,
-};
+use crate::api::{ApiError, CurrentUser, JsonApi, PolicyError::*, Ugc};
 use crate::cache::*;
 use crate::db_conn::Db;
 use crate::libs::diesel_logger::LoggingConnection;
@@ -216,10 +212,13 @@ pub async fn set_title(ti: Form<TitleInput>, user: CurrentUser, rconn: RdsConn) 
     if ti.title.is_empty() {
         Err(InvalidTitle)?
     }
+
+    /*
     ti.title
         .chars()
         .map(|c| c.is_alphanumeric().then_some(()).ok_or(InvalidTitle))
         .collect::<Result<Vec<()>, PolicyError>>()?;
+    */
 
     let secret = CustomTitle::set(&rconn, &user.namehash, &ti.title, &ti.secret).await?;
     code0!(secret)
