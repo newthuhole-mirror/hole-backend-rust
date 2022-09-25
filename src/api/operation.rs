@@ -1,4 +1,8 @@
-use crate::api::{ApiError, CurrentUser, JsonApi, PolicyError::*, Ugc};
+use crate::api::{
+    ApiError, CurrentUser, JsonApi,
+    PolicyError::{self, *},
+    Ugc,
+};
 use crate::cache::*;
 use crate::db_conn::Db;
 use crate::libs::diesel_logger::LoggingConnection;
@@ -204,20 +208,21 @@ pub async fn block(bi: Form<BlockInput>, user: CurrentUser, db: Db, rconn: RdsCo
 pub struct TitleInput {
     #[field(validate = len(1..31))]
     title: String,
+    secret: String,
 }
 
-#[post("/title", data = "<ti>")]
+#[post("/set-title", data = "<ti>")]
 pub async fn set_title(ti: Form<TitleInput>, user: CurrentUser, rconn: RdsConn) -> JsonApi {
-    let title: String = ti.title.chars().filter(|c| c.is_alphanumeric()).collect();
-    if title.is_empty() {
-        Err(TitleUsed)?
+    if ti.title.is_empty() {
+        Err(InvalidTitle)?
     }
+    ti.title
+        .chars()
+        .map(|c| c.is_alphanumeric().then_some(()).ok_or(InvalidTitle))
+        .collect::<Result<Vec<()>, PolicyError>>()?;
 
-    if CustomTitle::set(&rconn, &user.namehash, &title).await? {
-        code0!()
-    } else {
-        Err(TitleUsed)?
-    }
+    let secret = CustomTitle::set(&rconn, &user.namehash, &ti.title, &ti.secret).await?;
+    code0!(secret)
 }
 
 #[derive(FromForm)]

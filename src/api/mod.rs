@@ -61,20 +61,23 @@ pub struct CurrentUser {
     is_admin: bool,
     is_candidate: bool,
     custom_title: String,
+    title_secret: String,
     pub auto_block_rank: u8,
 }
 
 impl CurrentUser {
     pub async fn from_hash(rconn: &RdsConn, namehash: String) -> Self {
+        let (custom_title, title_secret) = CustomTitle::get(rconn, &namehash)
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default();
         Self {
             id: None,
             is_admin: false,
             is_candidate: false,
-            custom_title: CustomTitle::get(rconn, &namehash)
-                .await
-                .ok()
-                .flatten()
-                .unwrap_or_default(),
+            custom_title,
+            title_secret,
             auto_block_rank: AutoBlockRank::get(rconn, &namehash).await.unwrap_or(2),
             namehash,
         }
@@ -129,6 +132,8 @@ pub enum PolicyError {
     IsDeleted,
     NotAllowed,
     TitleUsed,
+    TitleProtected,
+    InvalidTitle,
     YouAreTmp,
     NoReason,
     OldApi,
@@ -158,6 +163,8 @@ impl<'r> Responder<'r, 'static> for ApiError {
                     PolicyError::IsDeleted => "内容被删除",
                     PolicyError::NotAllowed => "不允许的操作",
                     PolicyError::TitleUsed => "头衔已被使用",
+                    PolicyError::TitleProtected => "头衔处于保护期",
+                    PolicyError::InvalidTitle => "头衔包含不允许的符号",
                     PolicyError::YouAreTmp => "临时用户只可发布内容和进入单个洞",
                     PolicyError::NoReason => "未填写理由",
                     PolicyError::OldApi => "请使用最新版前端地址并检查更新",

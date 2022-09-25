@@ -1,4 +1,5 @@
-use crate::api::CurrentUser;
+use crate::api::{Api, CurrentUser, PolicyError};
+use crate::random_hasher::random_string;
 use crate::rds_conn::RdsConn;
 use chrono::{offset::Local, DateTime};
 use redis::{AsyncCommands, RedisResult};
@@ -51,6 +52,12 @@ const KEY_SYSTEMLOG: &str = "hole_v2:systemlog_list";
 const KEY_BANNED_USERS: &str = "hole_v2:banned_user_hash_list";
 const KEY_BLOCKED_COUNTER: &str = "hole_v2:blocked_counter";
 const KEY_CUSTOM_TITLE: &str = "hole_v2:title";
+const CUSTOM_TITLE_KEEP_TIME: usize = 7 * 24 * 60 * 60;
+macro_rules! KEY_TITLE_SECRET {
+    ($title: expr) => {
+        format!("hole_v2:title_secret:{}", $title)
+    };
+}
 const KEY_AUTO_BLOCK_RANK: &str = "hole_v2:auto_block_rank"; // rank * 5: 自动过滤的拉黑数阈值
 const KEY_ANNOUNCEMENT: &str = "hole_v2:announcement";
 const KEY_CANDIDATE: &str = "hole_v2:candidate";
@@ -210,20 +217,48 @@ impl BlockCounter {
 pub struct CustomTitle;
 
 impl CustomTitle {
+    async fn gen_and_set_secret(rconn: &RdsConn, title: &str) -> RedisResult<String> {
+        let secret = random_string(8);
+        rconn
+            .clone()
+            .set_ex(KEY_TITLE_SECRET!(&title), &secret, CUSTOM_TITLE_KEEP_TIME)
+            .await?;
+        Ok(secret)
+    }
+
     // return false if title exits
-    pub async fn set(rconn: &RdsConn, namehash: &str, title: &str) -> RedisResult<bool> {
+    pub async fn set(rconn: &RdsConn, namehash: &str, title: &str, secret: &str) -> Api<String> {
         let mut rconn = rconn.clone();
         if rconn.hexists(KEY_CUSTOM_TITLE, title).await? {
-            Ok(false)
+            Err(PolicyError::TitleUsed)?
         } else {
+            let ori_secret: Option<String> = rconn.get(KEY_TITLE_SECRET!(title)).await?;
+            ori_secret
+                .map_or(Some(()), |s| (s.eq(&secret).then_some(())))
+                .ok_or(PolicyError::TitleProtected)?;
             rconn.hset(KEY_CUSTOM_TITLE, namehash, title).await?;
             rconn.hset(KEY_CUSTOM_TITLE, title, namehash).await?;
-            Ok(true)
+            Ok(Self::gen_and_set_secret(&rconn, title).await?)
         }
     }
 
-    pub async fn get(rconn: &RdsConn, namehash: &str) -> RedisResult<Option<String>> {
-        rconn.clone().hget(KEY_CUSTOM_TITLE, namehash).await
+    pub async fn get(rconn: &RdsConn, namehash: &str) -> RedisResult<Option<(String, String)>> {
+        let t: Option<String> = rconn.clone().hget(KEY_CUSTOM_TITLE, namehash).await?;
+        Ok(if let Some(title) = t {
+            let s: Option<String> = rconn.clone().get(KEY_TITLE_SECRET!(title)).await?;
+            let secret = if let Some(ss) = s {
+                rconn
+                    .clone()
+                    .expire(KEY_TITLE_SECRET!(title), CUSTOM_TITLE_KEEP_TIME)
+                    .await?;
+                ss
+            } else {
+                Self::gen_and_set_secret(rconn, &title).await?
+            };
+            Some((title, secret))
+        } else {
+            None
+        })
     }
 
     pub async fn clear(rconn: &RdsConn) -> RedisResult<()> {

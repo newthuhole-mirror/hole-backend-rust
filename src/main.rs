@@ -79,7 +79,6 @@ async fn main() {
                 api::systemlog::get_systemlog,
                 api::operation::delete,
                 api::operation::report,
-                api::operation::set_title,
                 api::operation::block,
                 api::operation::set_auto_block,
                 api::vote::vote,
@@ -90,10 +89,11 @@ async fn main() {
         .mount(
             "/_api/v2",
             routes![
+                api::attention::set_notification,
                 api::comment::add_comment,
+                api::operation::set_title,
                 api::upload::local_upload,
                 cors::options_handler,
-                api::attention::set_notification,
             ],
         )
         .mount(
