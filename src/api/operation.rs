@@ -64,7 +64,7 @@ pub async fn delete(di: Form<DeleteInput>, user: CurrentUser, db: Db, rconn: Rds
 
     if user.is_admin && !user.namehash.eq(&author_hash) {
         Systemlog {
-            user_hash: user.namehash.clone(),
+            user_hash: user.custom_title.clone().unwrap_or(look!(user.namehash)),
             action_type: LogType::AdminDelete,
             target: format!("#{}, {}={}", p.id, di.id_type, di.id),
             detail: di.note.clone(),
@@ -75,7 +75,7 @@ pub async fn delete(di: Form<DeleteInput>, user: CurrentUser, db: Db, rconn: Rds
 
         if di.note.starts_with("!ban ") {
             Systemlog {
-                user_hash: user.namehash.clone(),
+                user_hash: user.custom_title.unwrap_or(look!(user.namehash)),
                 action_type: LogType::Ban,
                 target: look!(author_hash),
                 detail: di.note.clone(),
@@ -120,7 +120,7 @@ pub async fn report(ri: Form<ReportInput>, user: CurrentUser, db: Db, rconn: Rds
     }
 
     Systemlog {
-        user_hash: user.namehash.to_string(),
+        user_hash: user.custom_title.unwrap_or(look!(user.namehash)),
         action_type: LogType::Report,
         target: format!("#{}", ri.pid),
         detail: ri.reason.clone(),
@@ -135,7 +135,7 @@ pub async fn report(ri: Form<ReportInput>, user: CurrentUser, db: Db, rconn: Rds
         NewPost {
             content: format!("[系统自动代发]\n我举报了 #{}\n理由: {}", &p.id, &ri.reason),
             cw: "举报".to_string(),
-            author_hash: user.namehash.to_string(),
+            author_hash: user.namehash.clone(),
             author_title: String::default(),
             is_tmp: false,
             n_attentions: 1,

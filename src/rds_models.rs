@@ -250,7 +250,10 @@ impl CustomTitle {
         }
     }
 
-    pub async fn get(rconn: &RdsConn, namehash: &str) -> RedisResult<Option<(String, String)>> {
+    pub async fn get(
+        rconn: &RdsConn,
+        namehash: &str,
+    ) -> RedisResult<(Option<String>, Option<String>)> {
         let t: Option<String> = rconn.clone().hget(KEY_CUSTOM_TITLE, namehash).await?;
         Ok(if let Some(title) = t {
             let s: Option<String> = rconn.clone().get(KEY_TITLE_SECRET!(title)).await?;
@@ -263,9 +266,9 @@ impl CustomTitle {
             } else {
                 Self::gen_and_set_secret(rconn, &title).await?
             };
-            Some((title, secret))
+            (Some(title), Some(secret))
         } else {
-            None
+            (None, None)
         })
     }
 
@@ -340,18 +343,20 @@ pub async fn get_announcement(rconn: &RdsConn) -> RedisResult<Option<String>> {
     rconn.clone().get(KEY_ANNOUNCEMENT).await
 }
 
-pub async fn is_elected_candidate(rconn: &RdsConn, title: &str) -> RedisResult<bool> {
-    if title.is_empty() {
-        return Ok(false);
+pub async fn is_elected_candidate(rconn: &RdsConn, title: &Option<String>) -> RedisResult<bool> {
+    if let Some(t) = title {
+        rconn.clone().sismember(KEY_CANDIDATE, t).await
+    } else {
+        Ok(false)
     }
-    rconn.clone().sismember(KEY_CANDIDATE, title).await
 }
 
-pub async fn is_elected_admin(rconn: &RdsConn, title: &str) -> RedisResult<bool> {
-    if title.is_empty() {
-        return Ok(false);
+pub async fn is_elected_admin(rconn: &RdsConn, title: &Option<String>) -> RedisResult<bool> {
+    if let Some(t) = title {
+        rconn.clone().sismember(KEY_ADMIN, t).await
+    } else {
+        Ok(false)
     }
-    rconn.clone().sismember(KEY_ADMIN, title).await
 }
 
 pub async fn get_admin_list(rconn: &RdsConn) -> RedisResult<Vec<String>> {

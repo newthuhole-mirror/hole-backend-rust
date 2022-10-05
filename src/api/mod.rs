@@ -65,8 +65,8 @@ pub struct CurrentUser {
     namehash: String,
     is_admin: bool,
     is_candidate: bool,
-    custom_title: String,
-    title_secret: String,
+    custom_title: Option<String>,
+    title_secret: Option<String>,
     pub auto_block_rank: u8,
 }
 
@@ -75,8 +75,7 @@ impl CurrentUser {
         let (custom_title, title_secret) = CustomTitle::get(rconn, &namehash)
             .await
             .ok()
-            .flatten()
-            .unwrap_or_default();
+            .unwrap_or((None, None));
         Self {
             id: None,
             is_admin: false,

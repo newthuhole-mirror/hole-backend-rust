@@ -127,11 +127,10 @@ pub async fn add_comment(
         NewComment {
             content: ci.text.to_string(),
             author_hash: user.namehash.to_string(),
-            author_title: if use_title {
-                user.custom_title
-            } else {
-                "".to_owned()
-            },
+            author_title: user
+                .custom_title
+                .and_then(|title| use_title.then_some(title))
+                .unwrap_or_default(),
             is_tmp: user.id.is_none(),
             post_id: pid,
         },

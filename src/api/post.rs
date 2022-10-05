@@ -200,11 +200,10 @@ pub async fn publish_post(
             content: poi.text.to_string(),
             cw: poi.cw.to_string(),
             author_hash: user.namehash.to_string(),
-            author_title: if use_title {
-                user.custom_title
-            } else {
-                "".to_owned()
-            },
+            author_title: user
+                .custom_title
+                .and_then(|title| use_title.then_some(title))
+                .unwrap_or_default(),
             is_tmp: user.id.is_none(),
             n_attentions: 1,
             allow_search: poi.allow_search.is_some(),

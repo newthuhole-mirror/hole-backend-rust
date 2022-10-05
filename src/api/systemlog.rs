@@ -19,7 +19,7 @@ pub async fn get_systemlog(user: CurrentUser, rh: &State<RandomHasher>, rconn: R
         "data": logs.into_iter().map(|log|
             json!({
                 "type": log.action_type,
-                "user": look!(log.user_hash),
+                "user": log.user_hash,
                 "timestamp": log.time.timestamp(),
                 "detail": format!("{}\n{}", &log.target, &log.detail),
             })
