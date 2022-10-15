@@ -117,7 +117,7 @@ pub async fn report(ri: Form<ReportInput>, user: CurrentUser, db: Db, rconn: Rds
     }
 
     Systemlog {
-        user_hash: user.custom_title.unwrap_or(look!(user.namehash)),
+        user_hash: look!(user.namehash),
         action_type: LogType::Report,
         target: format!("#{}", ri.pid),
         detail: ri.reason.clone(),
