@@ -1,12 +1,9 @@
 use crate::api::post::ps2outputs;
 use crate::api::{CurrentUser, JsonApi, PolicyError::*, Ugc};
 use crate::db_conn::Db;
-use crate::libs::diesel_logger::LoggingConnection;
 use crate::models::*;
 use crate::rds_conn::RdsConn;
 use crate::rds_models::*;
-use crate::schema;
-use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use rocket::form::Form;
 use rocket::serde::json::json;
 use rocket::serde::json::serde_json;

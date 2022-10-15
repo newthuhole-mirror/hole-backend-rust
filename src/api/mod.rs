@@ -1,13 +1,10 @@
 #![allow(clippy::unnecessary_lazy_evaluations)]
 
 use crate::db_conn::Db;
-use crate::libs::diesel_logger::LoggingConnection;
 use crate::models::*;
 use crate::random_hasher::RandomHasher;
 use crate::rds_conn::RdsConn;
 use crate::rds_models::*;
-use crate::schema;
-use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use rocket::http::Status;
 use rocket::outcome::try_outcome;
 use rocket::request::{FromRequest, Outcome, Request};
@@ -300,6 +297,7 @@ pub mod attention;
 pub mod comment;
 pub mod operation;
 pub mod post;
+pub mod reaction;
 pub mod search;
 pub mod systemlog;
 pub mod upload;

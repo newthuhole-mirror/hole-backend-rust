@@ -3,12 +3,9 @@ use crate::api::vote::get_poll_dict;
 use crate::api::{Api, CurrentUser, JsonApi, PolicyError::*, Ugc};
 use crate::cache::*;
 use crate::db_conn::Db;
-use crate::libs::diesel_logger::LoggingConnection;
 use crate::models::*;
 use crate::rds_conn::RdsConn;
 use crate::rds_models::*;
-use crate::schema;
-use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 use rocket::form::Form;
 use rocket::futures::future::{self, OptionFuture};
 use rocket::serde::{
@@ -51,6 +48,9 @@ pub struct PostOutput {
     is_blocked: bool,
     //blocked_count: Option<i32>,
     poll: Option<Value>,
+    up_votes: i32,
+    down_votes: i32,
+    reaction_status: i32, // -1, 0, 1
     // for old version frontend
     timestamp: i64,
     likenum: i32,
@@ -117,6 +117,9 @@ async fn p2output(p: &Post, user: &CurrentUser, db: &Db, rconn: &RdsConn) -> Api
         } else {
             None
         },
+        up_votes: p.up_votes,
+        down_votes: p.down_votes,
+        reaction_status: get_user_post_reaction_status(rconn, p.id, &user.namehash).await?,
         // for old version frontend
         timestamp: p.create_time.timestamp(),
         likenum: p.n_attentions,

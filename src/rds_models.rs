@@ -48,6 +48,14 @@ macro_rules! add {
     };
 }
 
+macro_rules! rem {
+    ($vtype:ty) => {
+        pub async fn rem(&mut self, v: $vtype) -> RedisResult<usize> {
+            self.rconn.srem(&self.key, v).await
+        }
+    };
+}
+
 const KEY_SYSTEMLOG: &str = "hole_v2:systemlog_list";
 const KEY_BANNED_USERS: &str = "hole_v2:banned_user_hash_list";
 const KEY_BLOCKED_COUNTER: &str = "hole_v2:blocked_counter";
@@ -104,6 +112,34 @@ impl Attention {
             .await
             .unwrap_or_else(|e| warn!("clear all post cache fail, {}", e));
     }
+}
+
+pub struct Reaction {
+    key: String,
+    rconn: RdsConn,
+}
+
+impl Reaction {
+    init!(i32, i32, "hole_v2:reaction:{}:{}");
+
+    add!(&str);
+
+    rem!(&str);
+
+    has!(&str);
+}
+
+pub async fn get_user_post_reaction_status(
+    rconn: &RdsConn,
+    pid: i32,
+    namehash: &str,
+) -> RedisResult<i32> {
+    for rt in [-1, 1] {
+        if Reaction::init(pid, rt, rconn).has(namehash).await? {
+            return Ok(rt);
+        }
+    }
+    Ok(0)
 }
 
 #[derive(Serialize, Deserialize, Debug)]

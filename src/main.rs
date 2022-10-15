@@ -88,6 +88,7 @@ async fn main() {
             "/_api/v2",
             routes![
                 api::attention::set_notification,
+                api::reaction::reaction,
                 api::comment::add_comment,
                 api::operation::set_title,
                 api::upload::local_upload,

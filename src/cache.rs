@@ -17,7 +17,7 @@ const CUT_LENGTH: isize = 100;
 
 macro_rules! post_cache_key {
     ($id: expr) => {
-        format!("hole_v2:cache:post:{}", $id)
+        format!("hole_v2:cache:post:{}:v2", $id)
     };
 }
 

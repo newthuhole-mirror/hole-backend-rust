@@ -2,7 +2,6 @@
 
 use crate::cache::*;
 use crate::db_conn::{Conn, Db};
-use crate::libs::diesel_logger::LoggingConnection;
 use crate::random_hasher::random_string;
 use crate::rds_conn::RdsConn;
 use crate::schema::*;
@@ -60,6 +59,8 @@ macro_rules! op_to_col_expr {
 
 macro_rules! update {
     ($obj:expr, $table:ident, $db:expr, $({ $col:ident, $op:ident $v:expr }), + ) => {{
+        use crate::schema;
+        use diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
         let id = $obj.id;
         $obj = $db
             .run(move |c| {
@@ -83,9 +84,10 @@ macro_rules! base_query {
 }
 
 macro_rules! with_log {
-    ($c: expr) => {
+    ($c: expr) => {{
+        use crate::libs::diesel_logger::LoggingConnection;
         &LoggingConnection::new($c)
-    };
+    }};
 }
 
 #[derive(Queryable, Insertable, Serialize, Deserialize, Debug)]
@@ -120,6 +122,8 @@ pub struct Post {
     pub hot_score: i32,
     pub allow_search: bool,
     pub room_id: i32,
+    pub up_votes: i32,
+    pub down_votes: i32,
 }
 
 #[derive(Queryable, Insertable, Serialize, Deserialize, Debug)]

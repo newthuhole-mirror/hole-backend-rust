@@ -29,6 +29,8 @@ table! {
         hot_score -> Int4,
         allow_search -> Bool,
         room_id -> Int4,
+        up_votes -> Int4,
+        down_votes -> Int4,
     }
 }
 
