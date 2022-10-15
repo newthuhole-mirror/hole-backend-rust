@@ -135,6 +135,7 @@ impl<'r> FromRequest<'r> for CurrentUser {
 #[derive(Debug)]
 pub enum PolicyError {
     IsReported,
+    IsPrivate,
     IsDeleted,
     NotAllowed,
     TitleUsed,
@@ -165,6 +166,7 @@ impl<'r> Responder<'r, 'static> for ApiError {
                 "code": -1,
                 "msg": match e {
                     PolicyError::IsReported => "内容被举报，处理中",
+                    PolicyError::IsPrivate => "未被设置为公开",
                     PolicyError::IsDeleted => "内容被删除",
                     PolicyError::NotAllowed => "不允许的操作",
                     PolicyError::TitleUsed => "头衔已被使用",
@@ -218,6 +220,7 @@ pub trait Ugc {
     fn get_author_hash(&self) -> &str;
     fn get_is_deleted(&self) -> bool;
     fn get_is_reported(&self) -> bool;
+    fn get_is_private(&self) -> bool;
     fn extra_delete_condition(&self) -> bool;
     async fn do_set_deleted(&mut self, db: &Db) -> Api<()>;
     fn check_permission(&self, user: &CurrentUser, mode: &str) -> Api<()> {
@@ -229,6 +232,9 @@ pub trait Ugc {
         }
         if mode.contains('o') && self.get_is_reported() {
             return Err(ApiError::Pc(PolicyError::IsReported));
+        }
+        if mode.contains('o') && self.get_is_private() {
+            return Err(ApiError::Pc(PolicyError::IsPrivate));
         }
         if mode.contains('w') && self.get_author_hash() != user.namehash {
             return Err(ApiError::Pc(PolicyError::NotAllowed));
@@ -255,6 +261,9 @@ impl Ugc for Post {
     fn get_is_reported(&self) -> bool {
         self.is_reported
     }
+    fn get_is_private(&self) -> bool {
+        !self.allow_search
+    }
     fn get_is_deleted(&self) -> bool {
         self.is_deleted
     }
@@ -273,6 +282,9 @@ impl Ugc for Comment {
         &self.author_hash
     }
     fn get_is_reported(&self) -> bool {
+        false
+    }
+    fn get_is_private(&self) -> bool {
         false
     }
     fn get_is_deleted(&self) -> bool {
