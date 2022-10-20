@@ -182,7 +182,9 @@ pub async fn block(bi: Form<BlockInput>, user: CurrentUser, db: Db, rconn: RdsCo
     let curr = if blk.add(&nh_to_block).await? > 0 {
         BlockCounter::count_incr(&rconn, &nh_to_block).await?
     } else {
-        114514
+        BlockCounter::get_count(&rconn, &nh_to_block)
+            .await?
+            .unwrap_or_default()
     };
 
     BlockDictCache::init(&user.namehash, pid, &rconn)

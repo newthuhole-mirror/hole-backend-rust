@@ -241,7 +241,7 @@ impl BlockedUsers {
 pub struct BlockCounter;
 
 impl BlockCounter {
-    pub async fn count_incr(rconn: &RdsConn, namehash: &str) -> RedisResult<usize> {
+    pub async fn count_incr(rconn: &RdsConn, namehash: &str) -> RedisResult<i32> {
         rconn.clone().hincr(KEY_BLOCKED_COUNTER, namehash, 1).await
     }
 
