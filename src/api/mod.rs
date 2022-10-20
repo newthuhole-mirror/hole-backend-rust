@@ -262,7 +262,7 @@ impl Ugc for Post {
         self.is_reported
     }
     fn get_is_private(&self) -> bool {
-        !self.allow_search
+        !(self.allow_search || self.n_attentions > 20)
     }
     fn get_is_deleted(&self) -> bool {
         self.is_deleted
