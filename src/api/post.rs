@@ -164,7 +164,7 @@ pub async fn get_list(
     let page = p.unwrap_or(1);
     let page_size = 25;
     let start = (page - 1) * page_size;
-    let ps = Post::gets_by_page(
+    let ps: Vec<Post> = Post::gets_by_page(
         &db,
         &rconn,
         room_id,
@@ -172,7 +172,11 @@ pub async fn get_list(
         start.into(),
         page_size.into(),
     )
-    .await?;
+    .await?
+    .into_iter()
+    .filter(|post| page < 40 || !post.get_is_private())
+    .collect();
+
     let ps_data = ps2outputs(&ps, &user, &db, &rconn).await?;
 
     Ok(json!({
@@ -237,7 +241,14 @@ pub async fn edit_cw(cwi: Form<CwInput>, user: CurrentUser, db: Db, rconn: RdsCo
 #[get("/getmulti?<pids>")]
 pub async fn get_multi(pids: Vec<i32>, user: CurrentUser, db: Db, rconn: RdsConn) -> JsonApi {
     user.id.ok_or(YouAreTmp)?;
-    let ps = Post::get_multi(&db, &rconn, &pids).await?;
+    let ps: Vec<Post> = Post::get_multi(&db, &rconn, &pids)
+        .await?
+        .into_iter()
+        .filter(|post| {
+            !post.get_is_private()
+                || chrono::offset::Utc::now() - post.create_time < chrono::Duration::days(30)
+        })
+        .collect();
     let ps_data = ps2outputs(&ps, &user, &db, &rconn).await?;
 
     Ok(json!({
