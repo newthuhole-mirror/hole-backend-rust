@@ -14,6 +14,7 @@ use diesel::{
 };
 use rocket::futures::{future, join};
 use rocket::serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 
 no_arg_sql_function!(RANDOM, (), "Represents the sql RANDOM() function");
@@ -388,6 +389,19 @@ impl User {
     }
 
     pub async fn get_by_token(db: &Db, rconn: &RdsConn, token: &str) -> Option<Self> {
+        let real_token;
+
+        let token = match &token.split(':').collect::<Vec<&str>>()[..] {
+            ["sha256", tk] => {
+                let mut h = Sha256::new();
+                h.update(tk);
+                h.update("hole");
+                real_token = format!("{:x}", h.finalize())[0..16].to_string();
+                &real_token
+            }
+            _ => token,
+        };
+        // dbg!(token);
         let mut cacher = UserCache::init(token, &rconn);
         if let Some(u) = cacher.get().await {
             Some(u)
