@@ -99,7 +99,12 @@ async fn main() {
             "/_login",
             [
                 #[cfg(feature = "mastlogin")]
-                routes![login::cs_login, login::cs_auth],
+                routes![
+                    login::cs_login,
+                    login::cs_auth,
+                    login::gh_login,
+                    login::gh_auth
+                ],
                 routes![],
             ]
             .concat(),
