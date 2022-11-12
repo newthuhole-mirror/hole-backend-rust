@@ -172,7 +172,7 @@ impl<'r> Responder<'r, 'static> for ApiError {
                     PolicyError::TitleUsed => "头衔已被使用",
                     PolicyError::TitleProtected => "头衔处于保护期",
                     PolicyError::InvalidTitle => "头衔包含不允许的符号",
-                    PolicyError::YouAreTmp => "临时用户只可发布内容和进入单个洞",
+                    PolicyError::YouAreTmp => "临时用户只可发布内容",
                     PolicyError::NoReason => "未填写理由",
                     PolicyError::UnknownPushEndpoint => "未知的浏览器推送地址",
                 }

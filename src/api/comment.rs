@@ -118,6 +118,9 @@ pub async fn add_comment(
     rconn: RdsConn,
 ) -> JsonApi {
     let mut p = Post::get(&db, &rconn, pid).await?;
+    if p.author_hash != user.namehash {
+        user.id.ok_or(YouAreTmp)?;
+    }
     let use_title = ci.use_title.is_some() || user.is_admin || user.is_candidate;
     let c = Comment::create(
         &db,
