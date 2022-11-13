@@ -225,12 +225,12 @@ pub async fn gh_auth(code: String, jump_to_url: String, db: Db) -> Result<Redire
     //dbg!(&emails);
 
     for email in emails {
-        if let Some(email_name) = email
+        if let Some(name) = email
             .email
             .strip_suffix("@mails.tsinghua.edu.cn")
             .and_then(|name| email.verified.then_some(name))
         {
-            let tk = User::find_or_create_token(&db, &format!("gh_{}", email_name), false)
+            let tk = User::find_or_create_token(&db, &format!("email_{}", name), false)
                 .await
                 .unwrap();
 
