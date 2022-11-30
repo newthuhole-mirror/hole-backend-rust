@@ -224,11 +224,11 @@ pub trait Ugc {
     fn extra_delete_condition(&self) -> bool;
     async fn do_set_deleted(&mut self, db: &Db) -> Api<()>;
     fn check_permission(&self, user: &CurrentUser, mode: &str) -> Api<()> {
-        if user.is_admin {
-            return Ok(());
-        }
         if mode.contains('r') && self.get_is_deleted() {
             return Err(ApiError::Pc(PolicyError::IsDeleted));
+        }
+        if user.is_admin {
+            return Ok(());
         }
         if mode.contains('o') && self.get_is_reported() {
             return Err(ApiError::Pc(PolicyError::IsReported));
