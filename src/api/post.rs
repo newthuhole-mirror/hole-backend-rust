@@ -202,6 +202,13 @@ pub async fn publish_post(
 ) -> JsonApi {
     let use_title = poi.use_title.is_some() || user.is_admin || user.is_candidate;
 
+    let is_tmp = user.id.is_none();
+    let room_id = if is_tmp {
+        0
+    } else {
+        poi.room_id.unwrap_or_default()
+    };
+
     let p = Post::create(
         &db,
         NewPost {
@@ -212,10 +219,10 @@ pub async fn publish_post(
                 .custom_title
                 .and_then(|title| use_title.then_some(title))
                 .unwrap_or_default(),
-            is_tmp: user.id.is_none(),
+            is_tmp,
             n_attentions: 1,
             allow_search: poi.allow_search.is_some(),
-            room_id: poi.room_id.unwrap_or_default(),
+            room_id,
         },
     )
     .await?;
