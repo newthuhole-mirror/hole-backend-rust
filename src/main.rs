@@ -43,12 +43,14 @@ async fn main() {
     }
     env_logger::init();
     let rmc = init_rds_client().await;
-    let rconn = RdsConn(rmc.clone());
-    clear_outdate_redis_data(&rconn.clone()).await;
+    let mut rconn = RdsConn(rmc.clone());
+    let mut c_start = establish_connection();
+    models::User::clear_non_admin_users(&mut c_start, &mut rconn).await;
+    clear_outdate_redis_data(&mut rconn).await;
     tokio::spawn(async move {
         loop {
             sleep(Duration::from_secs(3 * 60 * 60)).await;
-            models::Post::annealing(establish_connection(), &rconn).await;
+            models::Post::annealing(&mut c_start, &mut rconn).await;
         }
     });
 

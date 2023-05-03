@@ -2,9 +2,11 @@
 
 use crate::db_conn::Db;
 use crate::models::User;
+use crate::random_hasher::RandomHasher;
 use rocket::request::{FromRequest, Outcome, Request};
 use rocket::response::Redirect;
 use rocket::serde::Deserialize;
+use rocket::State;
 use std::env;
 use url::Url;
 
@@ -74,6 +76,7 @@ pub async fn cs_auth(
     redirect_url: String,
     jump_to_url: String,
     db: Db,
+    rh: &State<RandomHasher>,
 ) -> Result<Redirect, &'static str> {
     if !env::var("FRONTEND_WHITELIST")
         .unwrap_or_default()
@@ -130,9 +133,13 @@ pub async fn cs_auth(
 
     //dbg!(&account);
 
-    let tk = User::find_or_create_token(&db, &format!("cs_{}", &account.id), false)
-        .await
-        .unwrap();
+    let tk = User::find_or_create_token(
+        &db,
+        &rh.hash_with_salt(&format!("cs_{}", &account.id)),
+        false,
+    )
+    .await
+    .unwrap();
 
     Ok(Redirect::to(format!("{}?token={}", &jump_to_url, &tk)))
 }
@@ -177,7 +184,12 @@ struct GithubEmail {
 }
 
 #[get("/gh/auth?<code>&<jump_to_url>")]
-pub async fn gh_auth(code: String, jump_to_url: String, db: Db) -> Result<Redirect, &'static str> {
+pub async fn gh_auth(
+    code: String,
+    jump_to_url: String,
+    db: Db,
+    rh: &State<RandomHasher>,
+) -> Result<Redirect, &'static str> {
     if !env::var("FRONTEND_WHITELIST")
         .unwrap_or_default()
         .split(',')
@@ -230,9 +242,13 @@ pub async fn gh_auth(code: String, jump_to_url: String, db: Db) -> Result<Redire
             .strip_suffix("@mails.tsinghua.edu.cn")
             .and_then(|name| email.verified.then_some(name))
         {
-            let tk = User::find_or_create_token(&db, &format!("email_{}", name), false)
-                .await
-                .unwrap();
+            let tk = User::find_or_create_token(
+                &db,
+                &rh.hash_with_salt(&format!("email_{}", name)),
+                false,
+            )
+            .await
+            .unwrap();
 
             return Ok(Redirect::to(format!("{}?token={}", &jump_to_url, &tk)));
         }

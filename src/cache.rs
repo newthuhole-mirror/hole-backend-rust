@@ -1,11 +1,12 @@
 use crate::api::CurrentUser;
 use crate::models::{Comment, Post, User};
 use crate::rds_conn::RdsConn;
-use crate::rds_models::{init, BlockedUsers};
+use crate::rds_models::{clear_all, init, BlockedUsers};
 use rand::Rng;
 use redis::{AsyncCommands, RedisError, RedisResult};
 use rocket::serde::json::serde_json;
 // can use rocket::serde::json::to_string in master version
+use futures_util::stream::StreamExt;
 use rocket::futures::future;
 use std::collections::HashMap;
 
@@ -28,6 +29,8 @@ pub struct PostCache {
 impl PostCache {
     init!();
 
+    clear_all!("hole_v2:cache::post:*:v2");
+
     pub async fn sets(&mut self, ps: &[&Post]) {
         if ps.is_empty() {
             return;
@@ -36,7 +39,7 @@ impl PostCache {
             .iter()
             .map(|p| (post_cache_key!(p.id), serde_json::to_string(p).unwrap()))
             .collect();
-        self.rconn.set_multiple(&kvs).await.unwrap_or_else(|e| {
+        self.rconn.mset(&kvs).await.unwrap_or_else(|e| {
             warn!("set post cache failed: {}", e);
             dbg!(&kvs);
         });
@@ -96,27 +99,6 @@ impl PostCache {
                     .collect()
             }
         }
-    }
-
-    pub async fn clear_all(&mut self) {
-        let mut keys = self
-            .rconn
-            .scan_match::<String, String>(post_cache_key!("*"))
-            .await
-            .unwrap(); //.collect::<Vec<String>>().await;
-                       // colllect() does not work
-                       // also see: https://github.com/mitsuhiko/redis-rs/issues/583
-        let mut ks_for_del = Vec::new();
-        while let Some(key) = keys.next_item().await {
-            ks_for_del.push(key);
-        }
-        if ks_for_del.is_empty() {
-            return;
-        }
-        self.rconn
-            .del(ks_for_del)
-            .await
-            .unwrap_or_else(|e| warn!("clear all post cache fail, {}", e));
     }
 }
 
@@ -294,6 +276,8 @@ pub struct UserCache {
 
 impl UserCache {
     init!(&str, "hole_v2:cache:user:{}");
+
+    clear_all!("hole_v2:cache:user:*");
 
     pub async fn set(&mut self, u: &User) {
         self.rconn

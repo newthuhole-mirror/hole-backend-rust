@@ -2,6 +2,7 @@ use crate::api::{Api, CurrentUser, PolicyError};
 use crate::random_hasher::random_string;
 use crate::rds_conn::RdsConn;
 use chrono::{offset::Local, DateTime};
+use futures_util::stream::StreamExt;
 use redis::{AsyncCommands, RedisResult};
 use rocket::serde::json::serde_json;
 use rocket::serde::{Deserialize, Serialize};
@@ -14,7 +15,7 @@ macro_rules! init {
             }
         }
     };
-    ($ktype:ty, $formatter:expr) => {
+    ($ktype:ty, $formatter:literal) => {
         pub fn init(k: $ktype, rconn: &RdsConn) -> Self {
             Self {
                 key: format!($formatter, k),
@@ -22,7 +23,7 @@ macro_rules! init {
             }
         }
     };
-    ($k1type:ty, $k2type:ty, $formatter:expr) => {
+    ($k1type:ty, $k2type:ty, $formatter:literal) => {
         pub fn init(k1: $k1type, k2: $k2type, rconn: &RdsConn) -> Self {
             Self {
                 key: format!($formatter, k1, k2),
@@ -56,6 +57,24 @@ macro_rules! rem {
     };
 }
 
+macro_rules! clear_all {
+    ($pattern:literal) => {
+        pub async fn clear_all(rconn: &mut RdsConn) {
+            let keys: Vec<String> = rconn
+                .scan_match::<&str, String>($pattern)
+                .await
+                .unwrap()
+                .collect::<Vec<String>>()
+                .await;
+
+            rconn
+                .del(keys)
+                .await
+                .unwrap_or_else(|e| warn!("clear all fail, pattern: {} , {}", $pattern, e));
+        }
+    };
+}
+
 const KEY_SYSTEMLOG: &str = "hole_v2:systemlog_list";
 const KEY_BANNED_USERS: &str = "hole_v2:banned_user_hash_list";
 const KEY_BLOCKED_COUNTER: &str = "hole_v2:blocked_counter";
@@ -85,32 +104,14 @@ impl Attention {
 
     has!(i32);
 
+    clear_all!("hole_v2:attention:*");
+
     pub async fn remove(&mut self, pid: i32) -> RedisResult<()> {
         self.rconn.srem(&self.key, pid).await
     }
 
     pub async fn all(&mut self) -> RedisResult<Vec<i32>> {
         self.rconn.smembers(&self.key).await
-    }
-
-    pub async fn clear_all(rconn: &RdsConn) {
-        let mut rconn = rconn.clone();
-        let mut keys = rconn
-            .scan_match::<&str, String>("hole_v2:attention:*")
-            .await
-            .unwrap();
-
-        let mut ks_for_del = Vec::new();
-        while let Some(key) = keys.next_item().await {
-            ks_for_del.push(key);
-        }
-        if ks_for_del.is_empty() {
-            return;
-        }
-        rconn
-            .del(ks_for_del)
-            .await
-            .unwrap_or_else(|e| warn!("clear all post cache fail, {}", e));
     }
 }
 
@@ -208,8 +209,8 @@ impl BannedUsers {
         rconn.clone().sismember(KEY_BANNED_USERS, namehash).await
     }
 
-    pub async fn clear(rconn: &RdsConn) -> RedisResult<()> {
-        rconn.clone().del(KEY_BANNED_USERS).await
+    pub async fn clear(rconn: &mut RdsConn) -> RedisResult<()> {
+        rconn.del(KEY_BANNED_USERS).await
     }
 }
 
@@ -224,6 +225,8 @@ impl BlockedUsers {
     add!(&str);
 
     has!(&str);
+
+    clear_all!("hole_v2:blocked_users:*");
 
     pub async fn check_if_block(
         rconn: &RdsConn,
@@ -308,8 +311,8 @@ impl CustomTitle {
         })
     }
 
-    pub async fn clear(rconn: &RdsConn) -> RedisResult<()> {
-        rconn.clone().del(KEY_CUSTOM_TITLE).await
+    pub async fn clear(rconn: &mut RdsConn) -> RedisResult<()> {
+        rconn.del(KEY_CUSTOM_TITLE).await
     }
 }
 
@@ -328,8 +331,8 @@ impl AutoBlockRank {
         Ok(rank.unwrap_or(4))
     }
 
-    pub async fn clear(rconn: &RdsConn) -> RedisResult<()> {
-        rconn.clone().del(KEY_AUTO_BLOCK_RANK).await
+    pub async fn clear(rconn: &mut RdsConn) -> RedisResult<()> {
+        rconn.del(KEY_AUTO_BLOCK_RANK).await
     }
 }
 
@@ -368,11 +371,12 @@ impl PollVote {
     }
 }
 
-pub async fn clear_outdate_redis_data(rconn: &RdsConn) {
+pub async fn clear_outdate_redis_data(rconn: &mut RdsConn) {
     BannedUsers::clear(rconn).await.unwrap();
     CustomTitle::clear(rconn).await.unwrap();
     AutoBlockRank::clear(rconn).await.unwrap();
     Attention::clear_all(rconn).await;
+    BlockedUsers::clear_all(rconn).await;
 }
 
 pub async fn get_announcement(rconn: &RdsConn) -> RedisResult<Option<String>> {
@@ -410,4 +414,5 @@ pub async fn clear_title_from_admins(rconn: &RdsConn, title: &str) -> RedisResul
     Ok(())
 }
 
+pub(crate) use clear_all;
 pub(crate) use init;

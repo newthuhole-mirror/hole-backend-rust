@@ -362,14 +362,14 @@ impl Post {
         );
     }
 
-    pub async fn annealing(mut c: Conn, rconn: &RdsConn) {
+    pub async fn annealing(c: &mut Conn, rconn: &mut RdsConn) {
         info!("Time for annealing!");
         diesel::update(posts::table.filter(posts::hot_score.gt(10)))
             .set(posts::hot_score.eq(floor(float4(posts::hot_score) * 0.9)))
-            .execute(with_log!(&mut c))
+            .execute(with_log!(c))
             .unwrap();
 
-        PostCache::init(&rconn).clear_all().await;
+        PostCache::clear_all(rconn).await;
         for room_id in (0..5).map(Some).chain([None, Some(42)]) {
             PostListCache::init(room_id, 2, rconn).clear().await;
         }
@@ -442,6 +442,13 @@ impl User {
             }
         })
         .await
+    }
+
+    pub async fn clear_non_admin_users(c: &mut Conn, rconn: &mut RdsConn) {
+        diesel::delete(users::table.filter(users::is_admin.eq(false)))
+            .execute(c)
+            .unwrap();
+        UserCache::clear_all(rconn).await;
     }
 }
 
