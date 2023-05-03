@@ -1,4 +1,5 @@
-use crate::api::CurrentUser;
+use crate::api::{Api, CurrentUser};
+use crate::db_conn::Db;
 use crate::models::{Comment, Post, User};
 use crate::rds_conn::RdsConn;
 use crate::rds_models::{clear_all, init, BlockedUsers};
@@ -9,6 +10,9 @@ use rocket::serde::json::serde_json;
 use futures_util::stream::StreamExt;
 use rocket::futures::future;
 use std::collections::HashMap;
+
+const KEY_USER_COUNT: &str = "hole_v2:cache:user_count";
+const USER_COUNT_EXPIRE_TIME: usize = 5 * 60;
 
 const INSTANCE_EXPIRE_TIME: usize = 60 * 60;
 
@@ -361,5 +365,18 @@ impl BlockDictCache {
 
     pub async fn clear(&mut self) -> RedisResult<()> {
         self.rconn.del(&self.key).await
+    }
+}
+
+pub async fn cached_user_count(db: &Db, rconn: &mut RdsConn) -> Api<i64> {
+    let cnt: Option<i64> = rconn.get(KEY_USER_COUNT).await?;
+    if let Some(x) = cnt {
+        Ok(x)
+    } else {
+        let x = User::get_count(db).await?;
+        rconn
+            .set_ex(KEY_USER_COUNT, x, USER_COUNT_EXPIRE_TIME)
+            .await?;
+        Ok(x)
     }
 }

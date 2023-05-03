@@ -1,4 +1,4 @@
-FROM rust:1.64-bullseye as builder
+FROM rust:1-bullseye as builder
 WORKDIR /usr/src/
 RUN cargo new myapp --vcs none
 WORKDIR /usr/src/myapp

@@ -450,6 +450,11 @@ impl User {
             .unwrap();
         UserCache::clear_all(rconn).await;
     }
+
+    pub async fn get_count(db: &Db) -> QueryResult<i64> {
+        db.run(move |c| users::table.count().get_result(with_log!(c)))
+            .await
+    }
 }
 
 #[derive(Insertable)]
