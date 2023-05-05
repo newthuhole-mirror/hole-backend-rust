@@ -256,6 +256,10 @@ impl Post {
                 query = query.filter(posts::is_reported.eq(false));
             }
 
+            if order_mode == 1 {
+                query = query.filter(posts::n_comments.gt(0));
+            }
+
             if let Some(ri) = room_id {
                 query = query.filter(posts::room_id.eq(ri));
             }
@@ -265,6 +269,7 @@ impl Post {
                 1 => query.order(posts::last_comment_time.desc()),
                 2 => query.order(posts::hot_score.desc()),
                 3 => query.order(RANDOM),
+                4 => query.order(posts::n_attentions.desc()),
                 _ => panic!("Wrong order mode!"),
             };
 
@@ -351,7 +356,7 @@ impl Post {
     pub async fn refresh_cache(&self, rconn: &RdsConn, is_new: bool) {
         join!(
             self.set_instance_cache(rconn),
-            future::join_all((if is_new { 0..4 } else { 1..4 }).map(|mode| async move {
+            future::join_all((if is_new { 0..5 } else { 1..5 }).map(|mode| async move {
                 PostListCache::init(None, mode, &rconn.clone())
                     .put(self)
                     .await;

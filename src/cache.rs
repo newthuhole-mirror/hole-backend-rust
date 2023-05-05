@@ -216,6 +216,7 @@ impl PostListCache {
                 1 => -p.last_comment_time.timestamp(),
                 2 => (-p.hot_score).into(),
                 3 => rand::thread_rng().gen_range(0..i64::MAX),
+                4 => (-p.n_attentions).into(),
                 _ => panic!("wrong mode"),
             },
             p.id,
