@@ -10,30 +10,48 @@ use rocket::State;
 use std::env;
 use url::Url;
 
-pub struct RefHeader(pub String);
+#[derive(Debug)]
+pub struct FrontendAddr(pub String);
 
 #[rocket::async_trait]
-impl<'r> FromRequest<'r> for RefHeader {
+impl<'r> FromRequest<'r> for FrontendAddr {
     type Error = ();
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
-        match request.headers().get_one("Referer") {
-            Some(h) => Outcome::Success(RefHeader(h.to_string())),
-            None => Outcome::Forward(()),
-        }
+        Outcome::Success(Self(
+            request
+                .headers()
+                .get_one("Referer")
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| env::var("DEFAULT_FRONTEND").unwrap()),
+        ))
+    }
+}
+
+#[derive(Debug)]
+pub struct BackendAddr(pub String);
+
+#[rocket::async_trait]
+impl<'r> FromRequest<'r> for BackendAddr {
+    type Error = ();
+    async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        Outcome::Success(Self(
+            request
+                .headers()
+                .get_one("Host")
+                .map(|s| format!("https://{}", s))
+                .unwrap_or_else(|| env::var("DEFAULT_BACKEND").unwrap()),
+        ))
     }
 }
 
 #[get("/?p=cs")]
-pub fn cs_login(r: RefHeader) -> Redirect {
+pub fn cs_login(r: FrontendAddr, h: BackendAddr) -> Redirect {
     let mast_url = env::var("MAST_BASE_URL").unwrap();
     let mast_cli = env::var("MAST_CLIENT").unwrap();
     let mast_scope = env::var("MAST_SCOPE").unwrap();
 
     let jump_to_url = Url::parse(&r.0).unwrap();
-
-    let mut redirect_url = env::var("AUTH_BACKEND_URL")
-        .map(|url| Url::parse(&url).unwrap())
-        .unwrap_or_else(|_| jump_to_url.clone());
+    let mut redirect_url = Url::parse(&h.0).unwrap();
     redirect_url.set_path("/_login/cs/auth");
 
     redirect_url = Url::parse_with_params(
@@ -145,16 +163,13 @@ pub async fn cs_auth(
 }
 
 #[get("/gh")]
-pub fn gh_login(r: RefHeader) -> Redirect {
+pub fn gh_login(r: FrontendAddr, h: BackendAddr) -> Redirect {
     let gh_url = "https://github.com/login/oauth/authorize";
     let gh_cli = env::var("GH_CLIENT").unwrap();
     let gh_scope = "user:email";
 
     let jump_to_url = Url::parse(&r.0).unwrap();
-
-    let mut redirect_url = env::var("AUTH_BACKEND_URL")
-        .map(|url| Url::parse(&url).unwrap())
-        .unwrap_or_else(|_| jump_to_url.clone());
+    let mut redirect_url = Url::parse(&h.0).unwrap();
     redirect_url.set_path("/_login/gh/auth");
 
     redirect_url = Url::parse_with_params(
