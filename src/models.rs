@@ -356,14 +356,16 @@ impl Post {
     pub async fn refresh_cache(&self, rconn: &RdsConn, is_new: bool) {
         join!(
             self.set_instance_cache(rconn),
-            future::join_all((if is_new { 0..5 } else { 1..5 }).map(|mode| async move {
-                PostListCache::init(None, mode, &rconn.clone())
-                    .put(self)
-                    .await;
-                PostListCache::init(Some(self.room_id), mode, &rconn.clone())
-                    .put(self)
-                    .await;
-            })),
+            future::join_all((if is_new { [0, 2, 3, 4] } else { [1, 2, 3, 4] }).map(
+                |mode| async move {
+                    PostListCache::init(None, mode, &rconn.clone())
+                        .put(self)
+                        .await;
+                    PostListCache::init(Some(self.room_id), mode, &rconn.clone())
+                        .put(self)
+                        .await;
+                }
+            )),
         );
     }
 
